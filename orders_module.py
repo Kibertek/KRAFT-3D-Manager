@@ -4,7 +4,7 @@ from html import escape
 from datetime import date, datetime
 
 from PySide6.QtCore import Qt, QDate
-from PySide6.QtGui import QTextDocument
+from PySide6.QtGui import QTextDocument, QPageSize
 from PySide6.QtPrintSupport import QPrinter, QPrintDialog
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QPushButton,
@@ -509,7 +509,7 @@ class OrdersPage(QWidget):
         """
 
         printer = QPrinter(QPrinter.PrinterMode.HighResolution)
-        printer.setPageSize(QPrinter.PageSize.A5)
+        printer.setPageSize(QPageSize(QPageSize.PageSizeId.A5))
         printer.setDocName(f'Заказ {order["order_number"]}')
         dialog = QPrintDialog(printer, self)
         dialog.setWindowTitle("Печать заказа A5 или сохранение в PDF")
