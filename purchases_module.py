@@ -1,6 +1,8 @@
 import sqlite3
 from pathlib import Path
 
+from finance_module import initialize_finance_tables
+
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QPushButton,
@@ -60,6 +62,15 @@ def initialize_purchase_tables():
             connection.execute(
                 "ALTER TABLE materials ADD COLUMN spool_count REAL NOT NULL DEFAULT 0"
             )
+        purchase_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(purchases)").fetchall()
+        }
+        if "finance_transaction_id" not in purchase_columns:
+            connection.execute(
+                "ALTER TABLE purchases ADD COLUMN finance_transaction_id INTEGER"
+            )
+    initialize_finance_tables()
 
 
 class PurchaseDialog(QDialog):
@@ -357,6 +368,11 @@ class PurchasesPage(QWidget):
         edit_button.clicked.connect(self.edit_selected_purchase)
         toolbar.addWidget(edit_button)
 
+        delete_button = QPushButton("Удалить закупку")
+        delete_button.setObjectName("dangerButton")
+        delete_button.clicked.connect(self.delete_selected_purchase)
+        toolbar.addWidget(delete_button)
+
         add_button = QPushButton("+ Добавить закупку")
         add_button.setObjectName("accentButton")
         add_button.clicked.connect(self.add_purchase)
@@ -485,6 +501,10 @@ class PurchasesPage(QWidget):
                     new_data["unit_price"], new_data["total"], new_data["supplier"],
                     new_data["notes"], purchase_id
                 ))
+                self.sync_finance_expense(
+                    connection, purchase_id, new_data,
+                    old_data.get("finance_transaction_id")
+                )
 
             self.load_purchases()
             QMessageBox.information(
@@ -561,6 +581,116 @@ class PurchasesPage(QWidget):
                     (max(0, updated_count), item_id)
                 )
 
+    def sync_finance_expense(self, connection, purchase_id, data, finance_id=None):
+        """Создаёт или обновляет ровно одну финансовую запись для закупки."""
+        if data.get("item_type") == "material":
+            category = "Материалы"
+        else:
+            component = connection.execute(
+                "SELECT category FROM components WHERE id = ?",
+                (data.get("item_id"),)
+            ).fetchone()
+            component_category = (component["category"] or "") if component else ""
+            category = "Упаковка" if "упаков" in component_category.lower() else "Комплектующие"
+
+        quantity_text = number(data.get("quantity") or 0)
+        unit = data.get("unit") or "ед."
+        comment_parts = [
+            f'Закупка: {data.get("item_name", "позиция")} — {quantity_text} {unit}'
+        ]
+        if data.get("notes"):
+            comment_parts.append(str(data["notes"]).strip())
+        comment = ". ".join(part for part in comment_parts if part)
+
+        values = (
+            data.get("purchase_date") or QDate.currentDate().toString("yyyy-MM-dd"),
+            category,
+            float(data.get("total") or 0),
+            (data.get("supplier") or "").strip() or "Поставщик",
+            comment,
+        )
+
+        existing = None
+        if finance_id:
+            existing = connection.execute(
+                "SELECT id FROM finance_transactions WHERE id = ?",
+                (finance_id,)
+            ).fetchone()
+
+        if existing:
+            connection.execute("""
+                UPDATE finance_transactions
+                SET operation_date = ?, operation_type = 'Расход', category = ?,
+                    amount = ?, source = ?, marketplace = '', order_id = NULL,
+                    order_number = '', comment = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (*values, finance_id))
+        else:
+            cursor = connection.execute("""
+                INSERT INTO finance_transactions (
+                    operation_date, operation_type, category, amount, source,
+                    order_id, order_number, marketplace, comment
+                ) VALUES (?, 'Расход', ?, ?, ?, NULL, '', '', ?)
+            """, values)
+            finance_id = cursor.lastrowid
+
+        connection.execute(
+            "UPDATE purchases SET finance_transaction_id = ? WHERE id = ?",
+            (finance_id, purchase_id)
+        )
+
+    def delete_selected_purchase(self):
+        purchase_id = self.selected_purchase_id()
+        if purchase_id is None:
+            QMessageBox.information(
+                self, "Закупка не выбрана",
+                "Выбери закупку, которую нужно удалить."
+            )
+            return
+
+        with get_connection() as connection:
+            purchase = connection.execute(
+                "SELECT * FROM purchases WHERE id = ?", (purchase_id,)
+            ).fetchone()
+
+        if purchase is None:
+            self.load_purchases()
+            return
+
+        answer = QMessageBox.question(
+            self, "Удаление закупки",
+            f'Удалить закупку «{purchase["item_name"]}» на сумму {money(purchase["total"])}? '
+            "Складской остаток будет уменьшен, а связанный расход удалён из финансов.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            with get_connection() as connection:
+                self.apply_stock_change(connection, dict(purchase), -1)
+                finance_id = purchase["finance_transaction_id"]
+                if finance_id:
+                    connection.execute(
+                        "DELETE FROM finance_transactions WHERE id = ?",
+                        (finance_id,)
+                    )
+                connection.execute(
+                    "DELETE FROM purchases WHERE id = ?", (purchase_id,)
+                )
+            self.load_purchases()
+            QMessageBox.information(
+                self, "Закупка удалена",
+                "Закупка удалена, склад и финансовая запись обновлены."
+            )
+        except Exception as error:
+            QMessageBox.critical(
+                self, "Не удалось удалить закупку",
+                f"{error}\n\nЕсли часть материала уже использована, сначала проверь остаток."
+            )
+            self.load_purchases()
+
     def add_purchase(self):
         dialog = PurchaseDialog(self)
         if dialog.exec() != QDialog.DialogCode.Accepted:
@@ -571,7 +701,7 @@ class PurchasesPage(QWidget):
             with get_connection() as connection:
                 # Изменение склада и запись закупки выполняются одной транзакцией.
                 self.apply_stock_change(connection, data, 1)
-                connection.execute("""
+                cursor = connection.execute("""
                     INSERT INTO purchases (
                         purchase_date, item_type, item_id, item_name,
                         quantity, unit, unit_price, total, supplier, notes
@@ -581,6 +711,8 @@ class PurchasesPage(QWidget):
                     data["item_name"], data["quantity"], data["unit"],
                     data["unit_price"], data["total"], data["supplier"], data["notes"]
                 ))
+                purchase_id = cursor.lastrowid
+                self.sync_finance_expense(connection, purchase_id, data)
 
             self.load_purchases()
             QMessageBox.information(
