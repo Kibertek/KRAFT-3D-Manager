@@ -340,6 +340,7 @@ class CalculatorPage(QWidget):
 
         self.materials = []
         self.components = []
+        self.packaging_kits = []
         self.material_rows = []
         self.component_rows = []
 
@@ -503,8 +504,25 @@ class CalculatorPage(QWidget):
             alignment=Qt.AlignmentFlag.AlignLeft,
         )
 
+        packaging_layout = QHBoxLayout()
+        self.packaging_kit_combo = QComboBox()
+        self.packaging_kit_combo.addItem("Без набора упаковки", None)
+        self.packaging_kit_combo.setMinimumWidth(250)
+        self.packaging_kit_quantity = NumberInput("1", decimals=3)
+        self.packaging_kit_quantity.setMaximumWidth(100)
+        self.packaging_kit_quantity.setToolTip("Количество наборов упаковки на одно изделие")
+        self.packaging_kit_cost_label = QLabel("0,00 ₽")
+        packaging_layout.addWidget(QLabel("Набор упаковки:"))
+        packaging_layout.addWidget(self.packaging_kit_combo, 1)
+        packaging_layout.addWidget(QLabel("Кол-во:"))
+        packaging_layout.addWidget(self.packaging_kit_quantity)
+        packaging_layout.addWidget(self.packaging_kit_cost_label)
+        component_layout.addLayout(packaging_layout)
+        self.packaging_kit_combo.currentIndexChanged.connect(self.recalculate)
+        self.packaging_kit_quantity.textChanged.connect(self.recalculate)
+
         self.components_cost_label = QLabel(
-            "Итого по комплектующим: 0,00 ₽"
+            "Итого по комплектующим и упаковке: 0,00 ₽"
         )
         self.components_cost_label.setStyleSheet(
             "font-weight: bold; color: #ff9d3d;"
@@ -717,6 +735,28 @@ class CalculatorPage(QWidget):
                     ORDER BY name COLLATE NOCASE
                 """).fetchall()
 
+                kit_rows = []
+                table_names = {
+                    row["name"] for row in connection.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table'"
+                    ).fetchall()
+                }
+                if {"packaging_kits", "packaging_kit_items", "packaging_labels"}.issubset(table_names):
+                    kit_rows = connection.execute("""
+                        SELECT k.id, k.name,
+                               COALESCE(SUM(
+                                   CASE WHEN i.item_type = 'component' THEN COALESCE(c.price, 0)
+                                        WHEN i.item_type = 'label' THEN COALESCE(l.price, 0)
+                                        ELSE 0 END * i.quantity
+                               ), 0) AS total
+                        FROM packaging_kits k
+                        LEFT JOIN packaging_kit_items i ON i.kit_id = k.id
+                        LEFT JOIN components c ON i.item_type = 'component' AND i.item_id = c.id
+                        LEFT JOIN packaging_labels l ON i.item_type = 'label' AND i.item_id = l.id
+                        GROUP BY k.id, k.name
+                        ORDER BY k.name COLLATE NOCASE
+                    """).fetchall()
+
             for material in material_rows:
                 weight = float(material["spool_weight"] or 0)
                 spool_price = float(material["spool_price"] or 0)
@@ -740,6 +780,23 @@ class CalculatorPage(QWidget):
                 }
                 for row in component_rows
             ]
+            self.packaging_kits = [
+                {"id": row["id"], "name": row["name"], "price": float(row["total"] or 0)}
+                for row in kit_rows
+            ]
+            selected_kit_id = self.packaging_kit_combo.currentData()
+            self.packaging_kit_combo.blockSignals(True)
+            self.packaging_kit_combo.clear()
+            self.packaging_kit_combo.addItem("Без набора упаковки", None)
+            for kit in self.packaging_kits:
+                self.packaging_kit_combo.addItem(
+                    f"{kit['name']} ({money(kit['price'])})", kit["id"]
+                )
+            if selected_kit_id is not None:
+                index = self.packaging_kit_combo.findData(selected_kit_id)
+                if index >= 0:
+                    self.packaging_kit_combo.setCurrentIndex(index)
+            self.packaging_kit_combo.blockSignals(False)
 
             for row in self.material_rows:
                 row.materials = self.materials
@@ -839,12 +896,24 @@ class CalculatorPage(QWidget):
             row.update_cost()
             material_cost += row.cost()
 
-        # Общая стоимость комплектующих.
+        # Общая стоимость комплектующих и выбранного набора упаковки.
         components_cost = 0.0
 
         for row in self.component_rows:
             row.update_cost()
             components_cost += row.cost()
+
+        selected_kit_id = self.packaging_kit_combo.currentData()
+        selected_kit = next(
+            (kit for kit in self.packaging_kits if kit["id"] == selected_kit_id),
+            None,
+        )
+        packaging_cost = (
+            selected_kit["price"] * self.packaging_kit_quantity.value()
+            if selected_kit else 0.0
+        )
+        components_cost += packaging_cost
+        self.packaging_kit_cost_label.setText(money(packaging_cost))
 
         # Производственные затраты.
         hours = self.print_hours.value()
