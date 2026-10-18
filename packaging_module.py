@@ -134,6 +134,8 @@ class PackagingItemDialog(QDialog):
             self.unit.setCurrentText(self.item["unit"] or "шт.")
             self.price.setValue(float(self.item["price"] or 0))
             self.quantity.setValue(float(self.item["quantity"] or 0))
+            self.quantity.setEnabled(False)
+            self.quantity.setToolTip("Остаток изменяется через раздел «Закупки», чтобы история склада оставалась согласованной.")
             self.min_quantity.setValue(float(self.item["min_quantity"] or 0))
             self.supplier.setText(self.item["supplier"] or "")
             self.notes.setPlainText(self.item["notes"] or "")
@@ -509,9 +511,9 @@ class PackagingPage(QWidget):
         data = dialog.data()
         with get_connection() as con:
             con.execute("""
-                UPDATE components SET name=?, unit=?, price=?, supplier=?, quantity=?,
+                UPDATE components SET name=?, unit=?, price=?, supplier=?,
                     min_quantity=?, notes=?, size_category=? WHERE id=? AND category='Упаковка'
-            """, (data["name"], data["unit"], data["price"], data["supplier"], data["quantity"],
+            """, (data["name"], data["unit"], data["price"], data["supplier"],
                   data["min_quantity"], data["notes"], data["size_category"], item_id))
         self.load_stock()
 
