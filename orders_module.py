@@ -1,7 +1,7 @@
 import sqlite3
 from pathlib import Path
 from html import escape
-from datetime import date
+from datetime import date, datetime
 
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QTextDocument
@@ -388,14 +388,15 @@ class OrdersPage(QWidget):
         data = dialog.get_data()
         try:
             with get_connection() as connection:
+                temporary_number = f'TEMP-{datetime.now().strftime("%Y%m%d%H%M%S%f")}'
                 cursor = connection.execute("""
                     INSERT INTO orders (
                         order_number, customer_id, product_id, customer_name,
                         customer_contact, product_name, quantity, unit_price,
                         total_price, status, order_date, due_date, comment
-                    ) VALUES ('', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
-                    data["customer_id"], data["product_id"], data["customer_name"],
+                    temporary_number, data["customer_id"], data["product_id"], data["customer_name"],
                     data["customer_contact"], data["product_name"], data["quantity"],
                     data["unit_price"], data["total_price"], data["status"],
                     data["order_date"], data["due_date"], data["comment"]
