@@ -1140,6 +1140,8 @@ class MainWindow(QMainWindow):
             page.load_orders()
         elif isinstance(page, FinancePage):
             page.load_transactions()
+        elif isinstance(page, ReportsPage):
+            page.load_report()
         elif isinstance(page, PackagingPage):
             page.load_stock()
             page.load_labels()
