@@ -14,6 +14,8 @@ from customers_module import CustomersPage
 from orders_module import OrdersPage
 from finance_module import FinancePage
 from reports_module import ReportsPage
+from marketplace_module import MarketplacePage
+from ozon_finance_module import OzonFinancePage
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QFont, QDesktopServices
@@ -1093,6 +1095,8 @@ class MainWindow(QMainWindow):
             )),
             ("Калькулятор", CalculatorPage()),
             ("Отчёты", ReportsPage()),
+            ("Маркетплейсы", MarketplacePage()),
+            ("Финансы Ozon", OzonFinancePage()),
             ("Настройки", PlaceholderPage(
                 "Настройки",
                 "Параметры программы и резервное копирование."
@@ -1116,7 +1120,7 @@ class MainWindow(QMainWindow):
 
         sidebar_layout.addStretch()
 
-        version = QLabel("KRAFT 3D Manager\nv0.4.0")
+        version = QLabel("KRAFT 3D Manager\nv0.6.0")
         version.setObjectName("version")
         sidebar_layout.addWidget(version)
 
@@ -1142,6 +1146,12 @@ class MainWindow(QMainWindow):
             page.load_transactions()
         elif isinstance(page, ReportsPage):
             page.load_report()
+        elif isinstance(page, MarketplacePage):
+            page.load_data()
+        elif isinstance(page, OzonFinancePage):
+            page.load_data()
+        elif isinstance(page, MarketplacePage):
+            page.load_data()
         elif isinstance(page, PackagingPage):
             page.load_stock()
             page.load_labels()
@@ -1466,7 +1476,7 @@ def main():
 
     app = QApplication(sys.argv)
     app.setApplicationName("KRAFT 3D Manager")
-    app.setApplicationVersion("0.4.0")
+    app.setApplicationVersion("0.6.0")
     app.setFont(QFont("Segoe UI", 10))
     app.setStyleSheet(STYLE)
 
