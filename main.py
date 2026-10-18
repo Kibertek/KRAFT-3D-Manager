@@ -1209,7 +1209,8 @@ QMessageBox QLabel {
     color: #ff9a3d;
 }
 
-QLineEdit, QTextEdit, QPlainTextEdit, QComboBox {
+QLineEdit, QTextEdit, QPlainTextEdit, QComboBox,
+QDoubleSpinBox, QSpinBox {
     background-color: #252525;
     color: #eeeeee;
     border: 1px solid #414141;
@@ -1219,13 +1220,43 @@ QLineEdit, QTextEdit, QPlainTextEdit, QComboBox {
     selection-color: #ffffff;
 }
 
-QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus {
+/* Поля чисел тоже оформляем явно: Qt иногда оставляет им белый фон. */
+QDoubleSpinBox, QSpinBox {
+    background-color: #252525;
+    color: #eeeeee;
+    min-height: 22px;
+}
+
+QDoubleSpinBox QLineEdit, QSpinBox QLineEdit {
+    background-color: #252525;
+    color: #eeeeee;
+    selection-background-color: #75421e;
+    selection-color: #ffffff;
+    border: none;
+    padding: 2px;
+}
+
+QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus,
+QDoubleSpinBox:focus, QSpinBox:focus {
     border: 1px solid #ff7a00;
 }
 
-QLineEdit:disabled, QTextEdit:disabled, QComboBox:disabled {
+QLineEdit:disabled, QTextEdit:disabled, QComboBox:disabled,
+QDoubleSpinBox:disabled, QSpinBox:disabled {
     color: #888888;
     background-color: #202020;
+}
+
+QDoubleSpinBox::up-button, QDoubleSpinBox::down-button,
+QSpinBox::up-button, QSpinBox::down-button {
+    background-color: #303030;
+    border: none;
+    width: 18px;
+}
+
+QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover,
+QSpinBox::up-button:hover, QSpinBox::down-button:hover {
+    background-color: #414141;
 }
 
 QComboBox QAbstractItemView {
