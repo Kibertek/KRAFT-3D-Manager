@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QPushButton,
     QLineEdit, QComboBox, QDoubleSpinBox, QDialog, QDialogButtonBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
-    QMessageBox, QTabWidget, QTextEdit, QGroupBox
+    QMessageBox, QTabWidget, QTextEdit, QGroupBox, QFrame
 )
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -444,6 +444,43 @@ class PackagingPage(QWidget):
         self.tabs.addTab(kits_tab, "Типы упаковки / наборы")
 
     def configure_table(self, table):
+        # Убираем системную светлую рамку Qt и задаём тёмное оформление явно.
+        table.setFrameShape(QFrame.Shape.NoFrame)
+        table.setLineWidth(0)
+        table.setStyleSheet("""
+            QTableWidget {
+                background-color: #202020;
+                alternate-background-color: #292929;
+                color: #eeeeee;
+                gridline-color: #383838;
+                border: 1px solid #383838;
+                border-radius: 4px;
+                selection-background-color: #75421e;
+                selection-color: #ffffff;
+                outline: 0;
+            }
+            QTableWidget::item {
+                color: #eeeeee;
+                padding: 5px;
+                border: none;
+            }
+            QTableWidget::item:selected {
+                background-color: #75421e;
+                color: #ffffff;
+            }
+            QHeaderView::section {
+                background-color: #303030;
+                color: #ffffff;
+                padding: 9px 6px;
+                border: none;
+                border-bottom: 1px solid #484848;
+                font-weight: 600;
+            }
+            QTableCornerButton::section {
+                background-color: #303030;
+                border: none;
+            }
+        """)
         table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
