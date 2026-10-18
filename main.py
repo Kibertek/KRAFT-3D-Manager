@@ -9,6 +9,7 @@ from calculator_module import CalculatorPage
 from components_module import ComponentsPage
 from materials_module import MaterialsPage
 from purchases_module import PurchasesPage
+from packaging_module import PackagingPage
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QFont, QDesktopServices
@@ -990,6 +991,7 @@ class MainWindow(QMainWindow):
             ("Изделия", ProductsPage()),
             ("Материалы", MaterialsPage()),
             ("Комплектующие", ComponentsPage()),
+            ("Упаковка", PackagingPage()),
             ("Закупки", PurchasesPage()),
             ("Принтеры", PlaceholderPage(
                 "Принтеры",
