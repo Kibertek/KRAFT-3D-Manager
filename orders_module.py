@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QPushButton,
     QLineEdit, QTextEdit, QComboBox, QDialog, QDialogButtonBox,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
-    QMessageBox, QDoubleSpinBox, QSpinBox, QDateEdit
+    QMessageBox, QDoubleSpinBox, QSpinBox, QDateEdit, QFileDialog
 )
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -508,13 +508,47 @@ class OrdersPage(QWidget):
         </body></html>
         """
 
+        choice_dialog = QMessageBox(self)
+        choice_dialog.setWindowTitle("Заказ " + str(order["order_number"]))
+        choice_dialog.setText("Что сделать с заказом?")
+        choice_dialog.setInformativeText("Формат документа: A5, книжная ориентация.")
+        print_button = choice_dialog.addButton(
+            "Отправить на печать", QMessageBox.ButtonRole.AcceptRole
+        )
+        pdf_button = choice_dialog.addButton(
+            "Сохранить в PDF", QMessageBox.ButtonRole.ActionRole
+        )
+        choice_dialog.addButton("Отмена", QMessageBox.ButtonRole.RejectRole)
+        choice_dialog.exec()
+        selected_button = choice_dialog.clickedButton()
+
+        if selected_button not in (print_button, pdf_button):
+            return
+
         printer = QPrinter(QPrinter.PrinterMode.HighResolution)
         printer.setPageSize(QPageSize(QPageSize.PageSizeId.A5))
         printer.setDocName(f'Заказ {order["order_number"]}')
-        dialog = QPrintDialog(printer, self)
-        dialog.setWindowTitle("Печать заказа A5 или сохранение в PDF")
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
+
+        if selected_button == print_button:
+            print_dialog = QPrintDialog(printer, self)
+            print_dialog.setWindowTitle("Печать заказа A5")
+            if print_dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+        else:
+            default_filename = f'Заказ_{order["order_number"]}.pdf'
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Сохранить заказ в PDF",
+                str(BASE_DIR / default_filename),
+                "PDF-файлы (*.pdf)"
+            )
+            if not file_path:
+                return
+            if not file_path.lower().endswith(".pdf"):
+                file_path += ".pdf"
+            printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
+            printer.setOutputFileName(file_path)
+
         document = QTextDocument(self)
         document.setHtml(html)
         document.print_(printer)
