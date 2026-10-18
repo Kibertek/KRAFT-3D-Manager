@@ -453,8 +453,8 @@ class ProductFilesDialog(QDialog):
         header.setSectionResizeMode(
             0, QHeaderView.ResizeMode.ResizeToContents
         )
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(
             3, QHeaderView.ResizeMode.ResizeToContents
         )
@@ -734,7 +734,7 @@ class ProductsPage(QWidget):
         header.setSectionResizeMode(
             0, QHeaderView.ResizeMode.ResizeToContents
         )
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(
             2, QHeaderView.ResizeMode.ResizeToContents
         )
