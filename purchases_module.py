@@ -90,12 +90,39 @@ class PurchaseDialog(QDialog):
         self.quantity_input.setDecimals(3)
         self.quantity_input.setValue(1)
         self.quantity_input.setSuffix(" ед.")
+        self.quantity_input.setMinimumHeight(38)
 
         self.price_input = QDoubleSpinBox()
         self.price_input.setRange(0, 100000000)
         self.price_input.setDecimals(2)
         self.price_input.setSingleStep(10)
         self.price_input.setSuffix(" ₽")
+        self.price_input.setMinimumHeight(38)
+
+        numeric_style = """
+            QDoubleSpinBox {
+                background-color: #252525;
+                color: #f2f2f2;
+                border: 1px solid #555555;
+                border-radius: 6px;
+                padding: 6px 8px;
+                selection-background-color: #75421e;
+                selection-color: #ffffff;
+            }
+            QDoubleSpinBox:focus {
+                border: 1px solid #ff7a00;
+            }
+            QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
+                background-color: #383838;
+                border: none;
+                width: 20px;
+            }
+            QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {
+                background-color: #505050;
+            }
+        """
+        self.quantity_input.setStyleSheet(numeric_style)
+        self.price_input.setStyleSheet(numeric_style)
 
         self.supplier_input = QLineEdit()
         self.supplier_input.setPlaceholderText("Магазин или поставщик")
