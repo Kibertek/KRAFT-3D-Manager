@@ -82,6 +82,26 @@ def initialize_database():
                 "ALTER TABLE products ADD COLUMN folder_path TEXT"
             )
 
+        # Безопасная миграция: добавляем только новые поля,
+        # не пересоздавая таблицу и не затрагивая существующие изделия.
+        financial_columns = {
+            "sale_price": "REAL NOT NULL DEFAULT 0",
+            "material_cost": "REAL NOT NULL DEFAULT 0",
+            "components_cost": "REAL NOT NULL DEFAULT 0",
+            "production_cost": "REAL NOT NULL DEFAULT 0",
+            "marketplace_cost": "REAL NOT NULL DEFAULT 0",
+            "total_cost": "REAL NOT NULL DEFAULT 0",
+            "profit": "REAL NOT NULL DEFAULT 0",
+            "margin": "REAL NOT NULL DEFAULT 0",
+            "markup": "REAL NOT NULL DEFAULT 0",
+            "calculation_details": "TEXT DEFAULT ''",
+        }
+        for column_name, column_type in financial_columns.items():
+            if column_name not in columns:
+                connection.execute(
+                    f"ALTER TABLE products ADD COLUMN {column_name} {column_type}"
+                )
+
         connection.execute("""
             CREATE TABLE IF NOT EXISTS product_files (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -644,9 +664,10 @@ class ProductsPage(QWidget):
 
         layout.addLayout(toolbar)
 
-        self.table = QTableWidget(0, 5)
+        self.table = QTableWidget(0, 8)
         self.table.setHorizontalHeaderLabels([
             "Артикул", "Название", "Категория",
+            "Цена продажи", "Себестоимость", "Прибыль",
             "Статус", "Дата создания"
         ])
         self.table.setSelectionBehavior(
@@ -669,12 +690,10 @@ class ProductsPage(QWidget):
         header.setSectionResizeMode(
             2, QHeaderView.ResizeMode.ResizeToContents
         )
-        header.setSectionResizeMode(
-            3, QHeaderView.ResizeMode.ResizeToContents
-        )
-        header.setSectionResizeMode(
-            4, QHeaderView.ResizeMode.ResizeToContents
-        )
+        for column in (3, 4, 5, 6, 7):
+            header.setSectionResizeMode(
+                column, QHeaderView.ResizeMode.ResizeToContents
+            )
 
         self.table.doubleClicked.connect(self.edit_product)
         layout.addWidget(self.table, 1)
@@ -727,10 +746,19 @@ class ProductsPage(QWidget):
         self.table.setRowCount(len(rows))
 
         for row_index, product in enumerate(rows):
+            sale_price = float(product["sale_price"] or 0)
+            total_cost = float(product["total_cost"] or 0)
+            profit = float(product["profit"] or 0)
             values = [
                 product["article"],
                 product["name"],
                 product["category"] or "",
+                f"{sale_price:,.2f}".replace(",", " ").replace(".", ",") + " ₽"
+                    if sale_price > 0 else "—",
+                f"{total_cost:,.2f}".replace(",", " ").replace(".", ",") + " ₽"
+                    if sale_price > 0 else "—",
+                f"{profit:,.2f}".replace(",", " ").replace(".", ",") + " ₽"
+                    if sale_price > 0 else "—",
                 product["status"] or "",
                 product["created_at"] or "",
             ]
