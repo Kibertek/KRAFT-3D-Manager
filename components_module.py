@@ -421,6 +421,78 @@ class ComponentsPage(QWidget):
         self.load_components()
 
     def setup_ui(self):
+        self.setObjectName("componentsPage")
+        self.setStyleSheet("""
+            QWidget#componentsPage {
+                background-color: #202020;
+                color: #eeeeee;
+            }
+
+            QWidget#componentsPage QLabel {
+                color: #eeeeee;
+                background-color: transparent;
+            }
+
+            QWidget#componentsPage QLineEdit {
+                background-color: #252525;
+                color: #ffffff;
+                border: 1px solid #505050;
+                border-radius: 6px;
+                padding: 8px;
+                selection-background-color: #75421e;
+                selection-color: #ffffff;
+            }
+
+            QWidget#componentsPage QLineEdit:focus {
+                border: 1px solid #ff7a00;
+            }
+
+            QTableWidget#componentsTable {
+                background-color: #202020;
+                alternate-background-color: #292929;
+                color: #eeeeee;
+                gridline-color: #383838;
+                border: 1px solid #383838;
+                border-radius: 4px;
+                selection-background-color: #75421e;
+                selection-color: #ffffff;
+                outline: 0;
+            }
+
+            QTableWidget#componentsTable::item {
+                color: #eeeeee;
+                padding: 5px;
+                border: none;
+            }
+
+            QTableWidget#componentsTable::item:selected {
+                background-color: #75421e;
+                color: #ffffff;
+            }
+
+            QTableWidget#componentsTable QHeaderView::section {
+                background-color: #303030;
+                color: #ffffff;
+                padding: 9px 6px;
+                border: none;
+                border-bottom: 1px solid #484848;
+                font-weight: 600;
+            }
+
+            QWidget#componentsPage QPushButton {
+                background-color: #303030;
+                color: #ffffff;
+                border: 1px solid #505050;
+                border-radius: 6px;
+                padding: 9px 12px;
+            }
+
+            QWidget#componentsPage QPushButton:hover {
+                background-color: #414141;
+                border-color: #ff7a00;
+            }
+        """)
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(12)
@@ -461,6 +533,8 @@ class ComponentsPage(QWidget):
         layout.addLayout(toolbar)
 
         self.table = QTableWidget()
+        self.table.setObjectName("componentsTable")
+        self.table.verticalHeader().setVisible(False)
         self.table.setColumnCount(8)
         self.table.setHorizontalHeaderLabels([
             "ID",
