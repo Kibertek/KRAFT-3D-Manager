@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QTextEdit, QComboBox, QDialog,
     QDialogButtonBox, QFormLayout, QTableWidget,
     QTableWidgetItem, QHeaderView, QMessageBox,
-    QAbstractItemView, QFileDialog
+    QAbstractItemView, QFileDialog, QDoubleSpinBox
 )
 
 
@@ -291,10 +291,22 @@ class ProductDialog(QDialog):
         )
         self.description_input.setMaximumHeight(120)
 
+        # Финансовые поля изделия. Их можно исправлять вручную в каталоге.
+        self.sale_price_input = self.create_money_input()
+        self.material_cost_input = self.create_money_input()
+        self.components_cost_input = self.create_money_input()
+        self.production_cost_input = self.create_money_input()
+        self.marketplace_cost_input = self.create_money_input()
+
         form.addRow("Артикул *", self.article_input)
         form.addRow("Название *", self.name_input)
         form.addRow("Категория", self.category_input)
         form.addRow("Статус", self.status_input)
+        form.addRow("Цена продажи, ₽", self.sale_price_input)
+        form.addRow("Материалы, ₽", self.material_cost_input)
+        form.addRow("Комплектующие и упаковка, ₽", self.components_cost_input)
+        form.addRow("Производство, ₽", self.production_cost_input)
+        form.addRow("Налог и маркетплейс, ₽", self.marketplace_cost_input)
         form.addRow("Описание", self.description_input)
 
         layout.addLayout(form)
@@ -319,8 +331,23 @@ class ProductDialog(QDialog):
             self.description_input.setPlainText(
                 product["description"] or ""
             )
+            self.sale_price_input.setValue(float(product["sale_price"] or 0))
+            self.material_cost_input.setValue(float(product["material_cost"] or 0))
+            self.components_cost_input.setValue(float(product["components_cost"] or 0))
+            self.production_cost_input.setValue(float(product["production_cost"] or 0))
+            self.marketplace_cost_input.setValue(float(product["marketplace_cost"] or 0))
         else:
             self.category_input.setCurrentText("Брелоки и сувениры")
+
+    @staticmethod
+    def create_money_input():
+        field = QDoubleSpinBox()
+        field.setRange(0, 999999999)
+        field.setDecimals(2)
+        field.setSingleStep(10)
+        field.setSuffix(" ₽")
+        field.setKeyboardTracking(False)
+        return field
 
     def validate_and_accept(self):
         if not self.article_input.text().strip():
@@ -336,6 +363,17 @@ class ProductDialog(QDialog):
         self.accept()
 
     def get_data(self):
+        sale_price = self.sale_price_input.value()
+        material_cost = self.material_cost_input.value()
+        components_cost = self.components_cost_input.value()
+        production_cost = self.production_cost_input.value()
+        marketplace_cost = self.marketplace_cost_input.value()
+        direct_cost = material_cost + components_cost + production_cost
+        total_cost = direct_cost + marketplace_cost
+        profit = sale_price - total_cost
+        margin = profit / sale_price * 100 if sale_price > 0 else 0
+        markup = profit / direct_cost * 100 if direct_cost > 0 else 0
+
         return {
             "article": self.article_input.text().strip(),
             "name": self.name_input.text().strip(),
@@ -345,6 +383,15 @@ class ProductDialog(QDialog):
             ),
             "status": self.status_input.currentText(),
             "description": self.description_input.toPlainText().strip(),
+            "sale_price": sale_price,
+            "material_cost": material_cost,
+            "components_cost": components_cost,
+            "production_cost": production_cost,
+            "marketplace_cost": marketplace_cost,
+            "total_cost": total_cost,
+            "profit": profit,
+            "margin": margin,
+            "markup": markup,
         }
 
 
@@ -853,7 +900,10 @@ class ProductsPage(QWidget):
                 connection.execute("""
                     UPDATE products
                     SET article = ?, name = ?, description = ?,
-                        category = ?, status = ?
+                        category = ?, status = ?, sale_price = ?,
+                        material_cost = ?, components_cost = ?,
+                        production_cost = ?, marketplace_cost = ?,
+                        total_cost = ?, profit = ?, margin = ?, markup = ?
                     WHERE id = ?
                 """, (
                     data["article"],
@@ -861,6 +911,15 @@ class ProductsPage(QWidget):
                     data["description"],
                     data["category"],
                     data["status"],
+                    data["sale_price"],
+                    data["material_cost"],
+                    data["components_cost"],
+                    data["production_cost"],
+                    data["marketplace_cost"],
+                    data["total_cost"],
+                    data["profit"],
+                    data["margin"],
+                    data["markup"],
                     product_id,
                 ))
 
