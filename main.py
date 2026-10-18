@@ -8,6 +8,7 @@ from pathlib import Path
 from calculator_module import CalculatorPage
 from components_module import ComponentsPage
 from materials_module import MaterialsPage
+from purchases_module import PurchasesPage
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QFont, QDesktopServices
@@ -989,6 +990,7 @@ class MainWindow(QMainWindow):
             ("Изделия", ProductsPage()),
             ("Материалы", MaterialsPage()),
             ("Комплектующие", ComponentsPage()),
+            ("Закупки", PurchasesPage()),
             ("Принтеры", PlaceholderPage(
                 "Принтеры",
                 "Оборудование, мощность, стоимость и ресурс."
@@ -1020,7 +1022,7 @@ class MainWindow(QMainWindow):
 
         sidebar_layout.addStretch()
 
-        version = QLabel("KRAFT 3D Manager\nv0.3.0")
+        version = QLabel("KRAFT 3D Manager\nv0.4.0")
         version.setObjectName("version")
         sidebar_layout.addWidget(version)
 
@@ -1250,7 +1252,7 @@ def main():
 
     app = QApplication(sys.argv)
     app.setApplicationName("KRAFT 3D Manager")
-    app.setApplicationVersion("0.3.0")
+    app.setApplicationVersion("0.4.0")
     app.setFont(QFont("Segoe UI", 10))
     app.setStyleSheet(STYLE)
 
