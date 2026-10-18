@@ -337,6 +337,78 @@ class PackagingPage(QWidget):
         self.load_kits()
 
     def setup_ui(self):
+        self.setObjectName("PackagingPage")
+        self.setStyleSheet("""
+            QWidget#PackagingPage {
+                background-color: #181818;
+                color: #eeeeee;
+            }
+            QWidget#PackagingPage QLabel {
+                color: #eeeeee;
+                background: transparent;
+            }
+            QWidget#PackagingPage QLineEdit,
+            QWidget#PackagingPage QComboBox,
+            QWidget#PackagingPage QSpinBox,
+            QWidget#PackagingPage QDoubleSpinBox,
+            QWidget#PackagingPage QTextEdit {
+                background-color: #252525;
+                color: #eeeeee;
+                border: 1px solid #484848;
+                border-radius: 4px;
+                padding: 5px;
+                selection-background-color: #75421e;
+            }
+            QWidget#PackagingPage QPushButton {
+                background-color: #303030;
+                color: #eeeeee;
+                border: 1px solid #484848;
+                border-radius: 4px;
+                padding: 7px 10px;
+            }
+            QWidget#PackagingPage QPushButton:hover {
+                background-color: #414141;
+            }
+            QWidget#PackagingPage QPushButton#accentButton {
+                background-color: #d87524;
+                color: #ffffff;
+                border: 1px solid #e58a3b;
+                font-weight: 600;
+            }
+            QWidget#PackagingPage QPushButton#dangerButton {
+                background-color: #682d2d;
+                color: #ffffff;
+                border: 1px solid #884040;
+            }
+            QWidget#PackagingPage QTabWidget::pane {
+                background-color: #202020;
+                border: none;
+                top: 0px;
+            }
+            QWidget#PackagingPage QTabBar {
+                background-color: #181818;
+                qproperty-drawBase: 0;
+            }
+            QWidget#PackagingPage QTabBar::tab {
+                background-color: #292929;
+                color: #eeeeee;
+                border: 1px solid #414141;
+                border-bottom: none;
+                padding: 10px 16px;
+                margin-right: 3px;
+                min-height: 20px;
+            }
+            QWidget#PackagingPage QTabBar::tab:selected {
+                background-color: #75421e;
+                color: #ffffff;
+                border-color: #d87524;
+                font-weight: 600;
+            }
+            QWidget#PackagingPage QTabBar::tab:hover:!selected {
+                background-color: #3a3a3a;
+                color: #ffffff;
+            }
+        """)
         root = QVBoxLayout(self)
         root.setContentsMargins(28, 24, 28, 24)
         root.setSpacing(12)
@@ -453,11 +525,15 @@ class PackagingPage(QWidget):
                 alternate-background-color: #292929;
                 color: #eeeeee;
                 gridline-color: #383838;
-                border: 1px solid #383838;
-                border-radius: 4px;
+                border: none;
+                border-radius: 0px;
                 selection-background-color: #75421e;
                 selection-color: #ffffff;
                 outline: 0;
+            }
+            QTableWidget::viewport {
+                background-color: #202020;
+                border: none;
             }
             QTableWidget::item {
                 color: #eeeeee;
