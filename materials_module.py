@@ -271,7 +271,7 @@ class MaterialsPage(QWidget):
         self.table.verticalHeader().setVisible(False)
 
         header = self.table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
 
         for column in range(1, 7):
             header.setSectionResizeMode(
