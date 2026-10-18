@@ -1022,7 +1022,7 @@ class MainWindow(QMainWindow):
 
         sidebar_layout.addStretch()
 
-        version = QLabel("KRAFT 3D Manager\nv0.3.0")
+        version = QLabel("KRAFT 3D Manager\nv0.4.0")
         version.setObjectName("version")
         sidebar_layout.addWidget(version)
 
