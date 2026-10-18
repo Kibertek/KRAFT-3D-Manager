@@ -118,6 +118,7 @@ class OrderDialog(QDialog):
         self.quantity_input = QSpinBox()
         self.quantity_input.setRange(1, 100000)
         self.quantity_input.setValue(1)
+        self.quantity_input.valueChanged.connect(self.update_total)
 
         self.price_input = QDoubleSpinBox()
         self.price_input.setRange(0, 999999999)
