@@ -12,6 +12,7 @@ from purchases_module import PurchasesPage
 from packaging_module import PackagingPage
 from customers_module import CustomersPage
 from orders_module import OrdersPage
+from finance_module import FinancePage
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QFont, QDesktopServices
@@ -1080,6 +1081,7 @@ class MainWindow(QMainWindow):
             ("Изделия", ProductsPage()),
             ("Заказчики", CustomersPage()),
             ("Заказы", OrdersPage()),
+            ("Финансы", FinancePage()),
             ("Материалы", MaterialsPage()),
             ("Комплектующие", ComponentsPage()),
             ("Упаковка", PackagingPage()),
@@ -1137,6 +1139,8 @@ class MainWindow(QMainWindow):
             page.load_customers()
         elif isinstance(page, OrdersPage):
             page.load_orders()
+        elif isinstance(page, FinancePage):
+            page.load_transactions()
         elif isinstance(page, PackagingPage):
             page.load_stock()
             page.load_labels()
