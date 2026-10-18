@@ -378,6 +378,8 @@ class PurchasesPage(QWidget):
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         for column in range(3, 7):
             header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+        # Растягиваем последний столбец на свободную ширину таблицы.
+        header.setStretchLastSection(True)
         self.table.doubleClicked.connect(self.edit_selected_purchase)
         layout.addWidget(self.table, 1)
 
