@@ -243,7 +243,7 @@ class KitDialog(QDialog):
         self.items_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.items_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.items_table.verticalHeader().setVisible(False)
-        self.items_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.items_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         for col in (0, 2, 3):
             self.items_table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
         group_layout.addWidget(self.items_table)
@@ -435,7 +435,7 @@ class PackagingPage(QWidget):
         self.stock_table = QTableWidget(0, 7)
         self.stock_table.setHorizontalHeaderLabels(["Название", "Размер", "Ед.", "Цена", "Остаток", "Мин. остаток", "Поставщик"])
         self.configure_table(self.stock_table)
-        self.stock_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.stock_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         for col in range(1, 7):
             self.stock_table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
         self.stock_table.doubleClicked.connect(self.edit_stock)
@@ -466,8 +466,8 @@ class PackagingPage(QWidget):
         self.labels_table = QTableWidget(0, 4)
         self.labels_table.setHorizontalHeaderLabels(["Название", "Тип", "Цена за единицу", "Примечание"])
         self.configure_table(self.labels_table)
-        self.labels_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.labels_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self.labels_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self.labels_table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         for col in (1, 2):
             self.labels_table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
         self.labels_table.doubleClicked.connect(self.edit_label)
@@ -497,8 +497,8 @@ class PackagingPage(QWidget):
         self.kits_table = QTableWidget(0, 4)
         self.kits_table.setHorizontalHeaderLabels(["Название набора", "Описание", "Позиций", "Стоимость набора"])
         self.configure_table(self.kits_table)
-        self.kits_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.kits_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.kits_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self.kits_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         for col in (2, 3):
             self.kits_table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeMode.ResizeToContents)
         self.kits_table.doubleClicked.connect(self.edit_kit)
