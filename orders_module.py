@@ -4,7 +4,7 @@ from html import escape
 from datetime import date, datetime
 
 from PySide6.QtCore import Qt, QDate
-from PySide6.QtGui import QTextDocument, QPageSize
+from PySide6.QtGui import QTextDocument, QTextOption, QPageSize
 from PySide6.QtPrintSupport import QPrinter, QPrintDialog
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QPushButton,
@@ -485,7 +485,7 @@ class OrdersPage(QWidget):
         h1 {{ font-size: 18pt; text-align: center; margin-bottom: 4px; }}
         .sub {{ text-align: center; color: #555; margin-bottom: 18px; }}
         table {{ width: 100%; border-collapse: collapse; margin-top: 8px; }}
-        td, th {{ border: 1px solid #777; padding: 7px; vertical-align: top; }}
+        td, th {{ border: 1px solid #777; padding: 7px; vertical-align: top; word-break: normal; overflow-wrap: normal; hyphens: none; }}
         th {{ background: #eee; text-align: left; }}
         .total {{ font-size: 13pt; font-weight: bold; text-align: right; margin-top: 15px; }}
         .sign {{ margin-top: 35px; }}
@@ -550,5 +550,6 @@ class OrdersPage(QWidget):
             printer.setOutputFileName(file_path)
 
         document = QTextDocument(self)
+        document.setDefaultTextOption(QTextOption(QTextOption.WrapMode.WordWrap))
         document.setHtml(html)
         document.print_(printer)
