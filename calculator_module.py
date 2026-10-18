@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from pathlib import Path
 
@@ -281,6 +282,7 @@ class ComponentCostRow(QWidget):
                 f"({money(component['price'])}/{component['unit']})",
                 {
                     "id": component["id"],
+                    "name": component["name"],
                     "price": component["price"],
                     "unit": component["unit"],
                 },
@@ -1005,6 +1007,65 @@ class CalculatorPage(QWidget):
             f"font-weight: bold; color: {color}; padding: 5px;"
         )
 
+        # Снимок текущего расчёта для сохранения вместе с изделием.
+        material_details = []
+        for row in self.material_rows:
+            material = row.selected_material()
+            if material:
+                material_details.append({
+                    "material_id": material["id"],
+                    "name": material["name"],
+                    "grams": row.grams_input.value(),
+                    "cost": round(row.cost(), 4),
+                    "price_per_gram": round(material["price_per_gram"], 6),
+                })
+
+        component_details = []
+        for row in self.component_rows:
+            component = row.selected_component()
+            if component:
+                component_details.append({
+                    "component_id": component["id"],
+                    "name": component["name"],
+                    "quantity": row.quantity_input.value(),
+                    "unit": component["unit"],
+                    "unit_price": component["price"],
+                    "cost": round(row.cost(), 4),
+                })
+
+        self.current_calculation = {
+            "sale_price": round(sale_price, 4),
+            "material_cost": round(material_cost, 4),
+            "components_cost": round(components_cost, 4),
+            "production_cost": round(production_cost, 4),
+            "marketplace_cost": round(marketplace_cost, 4),
+            "total_cost": round(total_cost, 4),
+            "profit": round(profit, 4),
+            "margin": round(margin, 4),
+            "markup": round(markup, 4),
+            "materials": material_details,
+            "components": component_details,
+            "packaging": {
+                "kit_id": selected_kit["id"] if selected_kit else None,
+                "kit_name": selected_kit["name"] if selected_kit else None,
+                "quantity": self.packaging_kit_quantity.value(),
+                "cost": round(packaging_cost, 4),
+            },
+            "production_parameters": {
+                "print_hours": hours,
+                "printer_watts": watts,
+                "electricity_tariff": tariff,
+                "depreciation_per_hour": depreciation_rate,
+                "labor_cost": labor,
+                "other_costs": other,
+                "tax_percent": tax_percent,
+                "commission_percent": commission_percent,
+                "fbs_percent": fbs_percent,
+                "electricity_cost": round(electricity_cost, 4),
+                "depreciation_cost": round(depreciation_cost, 4),
+            },
+        }
+
     def suggest_article(self):
         """Находит следующий свободный артикул K3D-XXX."""
 
@@ -1080,21 +1141,31 @@ class CalculatorPage(QWidget):
 
         try:
             with get_connection() as connection:
+                calculation = getattr(self, "current_calculation", {})
                 cursor = connection.execute("""
                     INSERT INTO products (
-                        article,
-                        name,
-                        description,
-                        category,
-                        status
+                        article, name, description, category, status,
+                        sale_price, material_cost, components_cost,
+                        production_cost, marketplace_cost, total_cost,
+                        profit, margin, markup, calculation_details
                     )
-                    VALUES (?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     data["article"],
                     data["name"],
                     data["description"],
                     data["category"],
                     "Активно",
+                    calculation.get("sale_price", 0),
+                    calculation.get("material_cost", 0),
+                    calculation.get("components_cost", 0),
+                    calculation.get("production_cost", 0),
+                    calculation.get("marketplace_cost", 0),
+                    calculation.get("total_cost", 0),
+                    calculation.get("profit", 0),
+                    calculation.get("margin", 0),
+                    calculation.get("markup", 0),
+                    json.dumps(calculation, ensure_ascii=False),
                 ))
 
                 product_id = cursor.lastrowid
@@ -1112,8 +1183,7 @@ class CalculatorPage(QWidget):
                 f"Цена продажи: {money(self.sale_price.value())}\n"
                 f"Себестоимость: {self.total_cost_result.text()}\n"
                 f"Прибыль: {self.profit_result.text()}\n\n"
-                "Финансовые показатели показаны для справки. "
-                "Они пока не сохраняются в отдельных полях товара.",
+                "Результаты расчёта сохранены в карточке изделия.",
             )
 
         except sqlite3.IntegrityError:
