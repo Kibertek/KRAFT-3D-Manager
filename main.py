@@ -10,6 +10,7 @@ from components_module import ComponentsPage
 from materials_module import MaterialsPage
 from purchases_module import PurchasesPage
 from packaging_module import PackagingPage
+from customers_module import CustomersPage
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QFont, QDesktopServices
@@ -1076,6 +1077,7 @@ class MainWindow(QMainWindow):
                 "Главная", "Рабочая панель KRAFT 3D Manager."
             )),
             ("Изделия", ProductsPage()),
+            ("Заказчики", CustomersPage()),
             ("Материалы", MaterialsPage()),
             ("Комплектующие", ComponentsPage()),
             ("Упаковка", PackagingPage()),
@@ -1129,6 +1131,8 @@ class MainWindow(QMainWindow):
         # Обновляем справочники при переходе на соответствующие страницы.
         if isinstance(page, ProductsPage):
             page.load_products()
+        elif isinstance(page, CustomersPage):
+            page.load_customers()
         elif isinstance(page, PackagingPage):
             page.load_stock()
             page.load_labels()
