@@ -104,10 +104,26 @@ class ReportsPage(QWidget):
         layout.addWidget(QLabel("Заказы по статусам"))
         layout.addWidget(self.status_table, 1)
 
+        self.product_table = QTableWidget(0, 5)
+        self.product_table.setHorizontalHeaderLabels([
+            "Изделие", "Продано, шт.", "Выручка по заказам",
+            "Расчётные затраты", "Расчётная прибыль"
+        ])
+        self.product_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.product_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.product_table.verticalHeader().setVisible(False)
+        self.product_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.ResizeToContents
+        )
+        self.product_table.horizontalHeader().setStretchLastSection(True)
+        layout.addWidget(QLabel("Прибыльность проданных изделий (оценка по себестоимости из каталога)"))
+        layout.addWidget(self.product_table, 2)
+
         self.finance_rows = []
         self.order_rows = []
         self.category_rows = []
         self.status_rows = []
+        self.product_profit_rows = []
 
     def period(self):
         start = self.start_date.date().toString("yyyy-MM-dd")
@@ -134,7 +150,7 @@ class ReportsPage(QWidget):
 
             self.order_rows = [dict(row) for row in connection.execute("""
                 SELECT order_number, order_date, customer_name, product_name,
-                       quantity, unit_price, total_price, status, due_date, comment
+                       product_id, quantity, unit_price, total_price, status, due_date, comment
                 FROM orders
                 WHERE order_date BETWEEN ? AND ?
                 ORDER BY order_date, id
@@ -170,6 +186,76 @@ class ReportsPage(QWidget):
             {"status": key, **value}
             for key, value in sorted(status_map.items(), key=lambda item: item[0].lower())
         ]
+
+        # Оценка прибыльности только по заказам, переданным клиенту.
+        # Себестоимость берётся из сохранённого расчёта изделия в каталоге.
+        product_by_id = {int(row["id"]): row for row in product_records}
+        sold_map = {}
+        for order in self.order_rows:
+            if (order.get("status") or "") != "Передан клиенту":
+                continue
+            product_id = order.get("product_id")
+            if product_id is None or int(product_id) not in product_by_id:
+                continue
+            item = sold_map.setdefault(int(product_id), {
+                "quantity": 0, "revenue": 0.0, "orders_count": 0
+            })
+            quantity = int(order.get("quantity") or 0)
+            item["quantity"] += quantity
+            item["revenue"] += float(order.get("total_price") or 0)
+            item["orders_count"] += 1
+
+        self.product_profit_rows = []
+        for product_id, sold in sold_map.items():
+            product = product_by_id[product_id]
+            sale_price = float(product.get("sale_price") or 0)
+            material = float(product.get("material_cost") or 0)
+            components = float(product.get("components_cost") or 0)
+            production = float(product.get("production_cost") or 0)
+            marketplace = float(product.get("marketplace_cost") or 0)
+            stored_total = float(product.get("total_cost") or 0)
+            direct_cost = material + components + production
+            has_cost_data = stored_total > 0 or direct_cost > 0
+            average_sale_price = (
+                sold["revenue"] / sold["quantity"]
+                if sold["quantity"] > 0 else 0.0
+            )
+            fee_rate = marketplace / sale_price if sale_price > 0 else 0.0
+            estimated_unit_cost = direct_cost + average_sale_price * fee_rate
+            estimated_cost = estimated_unit_cost * sold["quantity"] if has_cost_data else None
+            estimated_profit = sold["revenue"] - estimated_cost if has_cost_data else None
+            self.product_profit_rows.append({
+                "article": product.get("article") or "",
+                "name": product.get("name") or "",
+                "quantity": sold["quantity"],
+                "revenue": sold["revenue"],
+                "estimated_cost": estimated_cost,
+                "estimated_profit": estimated_profit,
+                "orders_count": sold["orders_count"],
+                "cost_data_available": has_cost_data,
+            })
+        self.product_profit_rows.sort(
+            key=lambda row: (
+                row["estimated_profit"] is not None,
+                row["estimated_profit"] if row["estimated_profit"] is not None else float("-inf")
+            ),
+            reverse=True
+        )
+
+        self.product_table.setRowCount(len(self.product_profit_rows))
+        for index, row in enumerate(self.product_profit_rows):
+            values = (
+                f'{row["article"]} | {row["name"]}',
+                str(row["quantity"]),
+                money(row["revenue"]),
+                money(row["estimated_cost"]) if row["estimated_cost"] is not None else "Нет расчёта",
+                money(row["estimated_profit"]) if row["estimated_profit"] is not None else "Нет расчёта",
+            )
+            for col, value in enumerate(values):
+                item = QTableWidgetItem(value)
+                if col > 0:
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                self.product_table.setItem(index, col, item)
 
         self.summary_label.setText(
             f"Фактические доходы: {money(income)}    |    "
@@ -259,6 +345,21 @@ class ReportsPage(QWidget):
                     row.get("quantity", 0), row.get("unit_price", 0),
                     row.get("total_price", 0), row.get("status", ""),
                     row.get("due_date", ""), row.get("comment", "")
+                ])
+
+            product_sheet = workbook.create_sheet("Прибыльность изделий")
+            product_sheet.append([
+                "Артикул", "Изделие", "Продано, шт.", "Выручка по переданным заказам, ₽",
+                "Расчётные затраты, ₽", "Расчётная прибыль, ₽", "Заказов",
+                "Примечание"
+            ])
+            for row in self.product_profit_rows:
+                product_sheet.append([
+                    row["article"], row["name"], row["quantity"], row["revenue"],
+                    row["estimated_cost"], row["estimated_profit"], row["orders_count"],
+                    "Оценка по себестоимости из каталога"
+                    if row["cost_data_available"]
+                    else "Нет сохранённого расчёта себестоимости"
                 ])
 
             for sheet in workbook.worksheets:
