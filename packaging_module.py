@@ -562,6 +562,8 @@ class PackagingPage(QWidget):
         table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         table.setAlternatingRowColors(True)
         table.verticalHeader().setVisible(False)
+        # Последний столбец заполняет свободное место справа, чтобы не было белой области.
+        table.horizontalHeader().setStretchLastSection(True)
 
     def selected_id(self, table):
         row = table.currentRow()
