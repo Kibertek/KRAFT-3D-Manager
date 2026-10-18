@@ -562,10 +562,10 @@ class ComponentsPage(QWidget):
 
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(
-            1, QHeaderView.ResizeMode.Stretch
+            1, QHeaderView.ResizeMode.ResizeToContents
         )
         header.setSectionResizeMode(
-            6, QHeaderView.ResizeMode.Stretch
+            6, QHeaderView.ResizeMode.ResizeToContents
         )
         header.setSectionResizeMode(
             7, QHeaderView.ResizeMode.ResizeToContents
