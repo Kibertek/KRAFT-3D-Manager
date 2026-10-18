@@ -1039,9 +1039,16 @@ class MainWindow(QMainWindow):
 
         page = self.pages.widget(index)
 
-        # Обновляем каталог при каждом переходе на страницу изделий.
+        # Обновляем справочники при переходе на соответствующие страницы.
         if isinstance(page, ProductsPage):
             page.load_products()
+        elif isinstance(page, PackagingPage):
+            page.load_stock()
+            page.load_labels()
+            page.load_kits()
+        elif isinstance(page, CalculatorPage):
+            page.load_reference_data()
+            page.recalculate()
 
 
 # ============================================================
