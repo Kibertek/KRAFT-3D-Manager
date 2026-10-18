@@ -156,6 +156,14 @@ class ReportsPage(QWidget):
                 ORDER BY order_date, id
             """, (start, end)).fetchall()]
 
+            product_records = [dict(row) for row in connection.execute("""
+                SELECT id, article, name, sale_price, material_cost,
+                       components_cost, production_cost, marketplace_cost,
+                       total_cost
+                FROM products
+                ORDER BY name COLLATE NOCASE
+            """).fetchall()]
+
         self.category_rows = []
         category_map = {}
         income = 0.0
