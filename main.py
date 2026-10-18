@@ -1217,7 +1217,7 @@ QMessageBox QLabel {
     color: #ff9a3d;
 }
 
-QLineEdit, QTextEdit, QPlainTextEdit, QComboBox,
+QLineEdit, QTextEdit, QPlainTextEdit, QComboBox, QDateEdit,
 QDoubleSpinBox, QSpinBox {
     background-color: #252525;
     color: #eeeeee;
@@ -1245,11 +1245,11 @@ QDoubleSpinBox QLineEdit, QSpinBox QLineEdit {
 }
 
 QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus, QComboBox:focus,
-QDoubleSpinBox:focus, QSpinBox:focus {
+QDateEdit:focus, QDoubleSpinBox:focus, QSpinBox:focus {
     border: 1px solid #ff7a00;
 }
 
-QLineEdit:disabled, QTextEdit:disabled, QComboBox:disabled,
+QLineEdit:disabled, QTextEdit:disabled, QComboBox:disabled, QDateEdit:disabled,
 QDoubleSpinBox:disabled, QSpinBox:disabled {
     color: #888888;
     background-color: #202020;
@@ -1274,6 +1274,80 @@ QComboBox QAbstractItemView {
     selection-color: #ffffff;
     border: 1px solid #414141;
     outline: none;
+}
+
+/* Тёмное оформление полей даты и выпадающего календаря. */
+QDateEdit {
+    background-color: #252525;
+    color: #eeeeee;
+    border: 1px solid #414141;
+    border-radius: 6px;
+    padding: 8px;
+    selection-background-color: #75421e;
+    selection-color: #ffffff;
+    min-height: 22px;
+}
+
+QDateEdit::drop-down {
+    background-color: #303030;
+    border: none;
+    width: 26px;
+}
+
+QDateEdit::down-arrow {
+    image: none;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid #eeeeee;
+    width: 0;
+    height: 0;
+}
+
+QCalendarWidget QWidget {
+    background-color: #252525;
+    color: #eeeeee;
+    alternate-background-color: #303030;
+}
+
+QCalendarWidget QToolButton {
+    background-color: #303030;
+    color: #eeeeee;
+    border: none;
+    border-radius: 4px;
+    padding: 6px;
+}
+
+QCalendarWidget QToolButton:hover {
+    background-color: #414141;
+}
+
+QCalendarWidget QMenu {
+    background-color: #252525;
+    color: #eeeeee;
+    selection-background-color: #75421e;
+}
+
+QCalendarWidget QSpinBox {
+    background-color: #252525;
+    color: #eeeeee;
+    selection-background-color: #75421e;
+    selection-color: #ffffff;
+}
+
+QCalendarWidget QAbstractItemView {
+    background-color: #252525;
+    color: #eeeeee;
+    selection-background-color: #75421e;
+    selection-color: #ffffff;
+    outline: none;
+}
+
+QCalendarWidget QAbstractItemView:enabled {
+    color: #eeeeee;
+}
+
+QCalendarWidget QAbstractItemView:disabled {
+    color: #777777;
 }
 
 QComboBox QAbstractItemView::item {
