@@ -13,6 +13,7 @@ from packaging_module import PackagingPage
 from customers_module import CustomersPage
 from orders_module import OrdersPage
 from finance_module import FinancePage
+from reports_module import ReportsPage
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QFont, QDesktopServices
@@ -1091,9 +1092,7 @@ class MainWindow(QMainWindow):
                 "Оборудование, мощность, стоимость и ресурс."
             )),
             ("Калькулятор", CalculatorPage()),
-            ("Отчёты", PlaceholderPage(
-                "Отчёты", "Экспорт данных в Excel."
-            )),
+            ("Отчёты", ReportsPage()),
             ("Настройки", PlaceholderPage(
                 "Настройки",
                 "Параметры программы и резервное копирование."
