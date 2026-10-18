@@ -550,6 +550,8 @@ class OrdersPage(QWidget):
             printer.setOutputFileName(file_path)
 
         document = QTextDocument(self)
-        document.setDefaultTextOption(QTextOption(QTextOption.WrapMode.WordWrap))
+        text_option = QTextOption()
+        text_option.setWrapMode(QTextOption.WrapMode.WordWrap)
+        document.setDefaultTextOption(text_option)
         document.setHtml(html)
         document.print_(printer)
