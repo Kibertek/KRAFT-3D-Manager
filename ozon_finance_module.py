@@ -105,24 +105,26 @@ def init_ozon_finance_tables():
                    sales_platform, work_scheme, commission_percent,
                    localization_index_percent, delivery_time_hours, amount_total
             FROM marketplace_accruals
-            WHERE COALESCE(row_hash, '') = ''
+            ORDER BY id
         """).fetchall()
+        occurrences = {}
         for row in existing_rows:
-            payload = [row[key] for key in (
+            payload = {key: row[key] for key in (
                 "accrual_id", "accrual_date", "service_group", "accrual_type",
                 "article", "sku", "product_name", "quantity", "seller_price",
                 "service_date", "sales_platform", "work_scheme",
                 "commission_percent", "localization_index_percent",
                 "delivery_time_hours", "amount_total"
-            )]
-            fingerprint = hashlib.sha256(
-                json.dumps(payload, ensure_ascii=False, default=str,
-                           separators=(",", ":")).encode("utf-8")
-            ).hexdigest()
-            connection.execute(
-                "UPDATE marketplace_accruals SET row_hash = ? WHERE id = ?",
-                (fingerprint, row["id"])
-            )
+            )}
+            base_hash = _row_fingerprint(payload)
+            occurrence = occurrences.get(base_hash, 0)
+            occurrences[base_hash] = occurrence + 1
+            fingerprint = _row_fingerprint(payload, occurrence)
+            if row["row_hash"] != fingerprint:
+                connection.execute(
+                    "UPDATE marketplace_accruals SET row_hash = ? WHERE id = ?",
+                    (fingerprint, row["id"])
+                )
 
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_marketplace_accruals_row_hash
@@ -220,7 +222,7 @@ def parse_ozon_financial_report(path):
     return data
 
 
-def _row_fingerprint(row):
+def _row_fingerprint(row, occurrence=0):
     fields = (
         "accrual_id", "accrual_date", "service_group", "accrual_type",
         "article", "sku", "product_name", "quantity", "seller_price",
@@ -229,6 +231,7 @@ def _row_fingerprint(row):
         "delivery_time_hours", "amount_total"
     )
     payload = [row.get(field, "") for field in fields]
+    payload.append(int(occurrence))
     return hashlib.sha256(
         json.dumps(payload, ensure_ascii=False, default=str,
                    separators=(",", ":")).encode("utf-8")
@@ -261,8 +264,12 @@ def import_ozon_financial_report(path):
 
         added = 0
         duplicates = 0
+        occurrences = {}
         for row in rows:
-            row_hash = _row_fingerprint(row)
+            base_hash = _row_fingerprint(row)
+            occurrence = occurrences.get(base_hash, 0)
+            occurrences[base_hash] = occurrence + 1
+            row_hash = _row_fingerprint(row, occurrence)
             duplicate = connection.execute(
                 "SELECT id FROM marketplace_accruals WHERE row_hash = ? LIMIT 1",
                 (row_hash,)
