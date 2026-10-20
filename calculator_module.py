@@ -1221,7 +1221,7 @@ class CalculatorPage(QWidget):
         try:
             with get_connection() as connection:
                 products = connection.execute("""
-                    SELECT id, article, name, calculation_details
+                    SELECT id, article, name, sale_price, calculation_details
                     FROM products
                     ORDER BY name COLLATE NOCASE
                 """).fetchall()
@@ -1256,18 +1256,46 @@ class CalculatorPage(QWidget):
         except (TypeError, json.JSONDecodeError):
             details = {}
 
+        self.editing_product_id = int(product["id"])
+        self.editing_product_name = f"{product['article']} | {product['name']}"
+
         if not details:
-            QMessageBox.warning(
+            # Ручная карточка ещё не содержит подробного расчёта.
+            # Сбрасываем поля на безопасные исходные значения, сохраняя цену изделия.
+            details = {
+                "sale_price": float(product["sale_price"] or 265),
+                "materials": [],
+                "components": [],
+                "packaging": {"kit_id": None, "quantity": 1},
+                "production_parameters": {
+                    "printer_id": None,
+                    "printer_watts": 150,
+                    "print_hours": 2,
+                    "electricity_tariff": 7,
+                    "depreciation_per_hour": 10,
+                    "labor_cost": 0,
+                    "other_costs": 0,
+                    "tax_percent": 4,
+                    "commission_percent": 23,
+                    "fbs_percent": 0,
+                },
+            }
+            self.load_calculation_details(details)
+            self.save_existing_button.setEnabled(True)
+            self.save_existing_button.setText(
+                f"Сохранить в изделие: {product['article']}"
+            )
+            QMessageBox.information(
                 self,
-                "Расчёт отсутствует",
-                "У этого изделия нет сохранённого подробного расчёта. "
-                "Сначала сохраните расчёт в калькуляторе для этого изделия."
+                "Ручное изделие загружено",
+                f"Изделие «{self.editing_product_name}» создано вручную и пока не имеет "
+                "подробного расчёта. В калькулятор загружены начальные параметры. "
+                "Укажи материалы, комплектующие и расходы, затем нажми "
+                "«Сохранить расчёт в изделие». Карточка не будет дублироваться."
             )
             return
 
         self.load_calculation_details(details)
-        self.editing_product_id = int(product["id"])
-        self.editing_product_name = f"{product['article']} | {product['name']}"
         self.save_existing_button.setEnabled(True)
         self.save_existing_button.setText(
             f"Сохранить в изделие: {product['article']}"
