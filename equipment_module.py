@@ -68,6 +68,16 @@ def initialize_equipment_tables():
                 FOREIGN KEY(printer_id) REFERENCES printers(id) ON DELETE CASCADE
             )
         """)
+        # Старый модуль комплектующих пока использует отдельное соединение SQLite,
+        # где внешние ключи могут быть выключены. Триггер гарантирует очистку связей.
+        connection.execute("""
+            CREATE TRIGGER IF NOT EXISTS trg_components_delete_printer_compatibility
+            AFTER DELETE ON components
+            BEGIN
+                DELETE FROM component_printer_compatibility
+                WHERE component_id = OLD.id;
+            END
+        """)
 
 
 def money(value):
