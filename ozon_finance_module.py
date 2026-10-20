@@ -552,11 +552,11 @@ class OzonFinancePage(QWidget):
         profit_after_global = total_profit - float(global_expenses or 0)
         self.summary.setText(
             f"Начисления Ozon за импортированные отчёты: {money(report_net)} | "
-            f"Выручка по товарам: {money(total_revenue)}\\n"
+            f"Выручка по товарам: {money(total_revenue)}\n"
             f"Расходы Ozon по товарам: {money(total_expenses)} | "
-            f"Себестоимость: {money(total_cost)}\\n"
-            f"Прибыль до налога с учётом расходов без артикула: {money(profit_after_global)}\\n"
-            f"Глобальные расходы без артикула: {money(global_expenses)}\\n"
-            f"{global_text}\\n"
+            f"Себестоимость: {money(total_cost)}\n"
+            f"Прибыль до налога с учётом расходов без артикула: {money(profit_after_global)}\n"
+            f"Глобальные расходы без артикула: {money(global_expenses)}\n"
+            f"{global_text}\n"
             "Начисления не равны гарантированной выплате на банковский счёт."
         )
