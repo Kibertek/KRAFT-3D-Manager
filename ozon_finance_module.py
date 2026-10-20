@@ -3,6 +3,7 @@ import sqlite3
 from pathlib import Path
 
 from PySide6.QtCore import Qt
+from database import get_connection as shared_get_connection
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
@@ -14,11 +15,7 @@ DB_PATH = BASE_DIR / "data" / "kraft3d.db"
 
 
 def get_connection():
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(DB_PATH)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA foreign_keys = ON")
-    return connection
+    return shared_get_connection()
 
 
 def money(value):
