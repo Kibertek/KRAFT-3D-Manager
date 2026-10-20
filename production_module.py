@@ -122,7 +122,14 @@ class ProductionPage(QWidget):
         self.history_table = QTableWidget(0, 5)
         self.history_table.setHorizontalHeaderLabels(["Дата", "Артикул", "Изделие", "Количество", "Комментарий"])
         self.prepare_table(self.history_table)
-        layout.addWidget(self.history_table, 2)
+        layout.addWidget(self.history_table, 1)
+        movement_title = QLabel("История движений склада")
+        movement_title.setObjectName("sectionTitle")
+        layout.addWidget(movement_title)
+        self.movement_table = QTableWidget(0, 5)
+        self.movement_table.setHorizontalHeaderLabels(["Дата", "Операция", "Артикул / изделие", "Количество", "Комментарий"])
+        self.prepare_table(self.movement_table)
+        layout.addWidget(self.movement_table, 1)
         bottom = QHBoxLayout()
         self.count_label = QLabel("Партий: 0")
         self.count_label.setObjectName("subtitle")
@@ -151,6 +158,10 @@ class ProductionPage(QWidget):
         with get_connection() as connection:
             stock = connection.execute("""SELECT p.id, p.article, p.name, COALESCE(SUM(b.quantity), 0) AS produced FROM products p LEFT JOIN production_batches b ON b.product_id = p.id WHERE p.article LIKE ? OR p.name LIKE ? GROUP BY p.id ORDER BY p.name COLLATE NOCASE""", (pattern, pattern)).fetchall()
             batches = connection.execute("""SELECT b.id, b.production_date, p.article, p.name, b.quantity, b.notes FROM production_batches b JOIN products p ON p.id = b.product_id WHERE p.article LIKE ? OR p.name LIKE ? ORDER BY b.production_date DESC, b.id DESC""", (pattern, pattern)).fetchall()
+            movements = connection.execute("""SELECT m.id, m.movement_date, m.movement_type, m.quantity, m.notes, p.article, p.name
+                FROM stock_movements m JOIN products p ON p.id=m.product_id
+                WHERE p.article LIKE ? OR p.name LIKE ? ORDER BY m.movement_date DESC, m.id DESC LIMIT 500""",
+                (pattern, pattern)).fetchall()
         self.stock_table.setRowCount(len(stock))
         for row, item in enumerate(stock):
             qty = self.format_qty(item["produced"])
@@ -165,7 +176,19 @@ class ProductionPage(QWidget):
                 cell = QTableWidgetItem(str(value))
                 cell.setData(Qt.ItemDataRole.UserRole, int(batch["id"]))
                 self.history_table.setItem(row, col, cell)
-        self.count_label.setText(f"Партий: {len(batches)} | Изделий в каталоге: {len(stock)}")
+        self.movement_table.setRowCount(len(movements))
+        type_labels = {"sale": "Продажа", "return": "Возврат", "writeoff": "Списание",
+                       "reserve": "Резерв", "release": "Снятие резерва"}
+        for row, movement in enumerate(movements):
+            values = [self.display_date(movement["movement_date"]),
+                      type_labels.get(movement["movement_type"], movement["movement_type"]),
+                      f"{movement['article']} | {movement['name']}",
+                      self.format_qty(movement["quantity"]), movement["notes"] or ""]
+            for col, value in enumerate(values):
+                cell = QTableWidgetItem(str(value))
+                cell.setData(Qt.ItemDataRole.UserRole, int(movement["id"]))
+                self.movement_table.setItem(row, col, cell)
+        self.count_label.setText(f"Партий: {len(batches)} | Движений: {len(movements)} | Изделий в каталоге: {len(stock)}")
 
     def add_batch(self):
         dialog = ProductionBatchDialog(self)
