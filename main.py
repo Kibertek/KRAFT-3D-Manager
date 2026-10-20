@@ -1092,8 +1092,27 @@ class MainWindow(QMainWindow):
         version.setObjectName("version")
         sidebar_outer_layout.addWidget(version)
 
+        # Рабочая область: кнопка позволяет открыть текущий раздел отдельно.
+        workspace = QWidget()
+        workspace_layout = QVBoxLayout(workspace)
+        workspace_layout.setContentsMargins(16, 12, 16, 12)
+        workspace_layout.setSpacing(8)
+
+        workspace_header = QHBoxLayout()
+        workspace_header.addStretch(1)
+        self.open_window_button = QPushButton("↗ Открыть в отдельном окне")
+        self.open_window_button.setObjectName("secondaryButton")
+        self.open_window_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.open_window_button.clicked.connect(self.open_current_page_window)
+        workspace_header.addWidget(self.open_window_button)
+        workspace_layout.addLayout(workspace_header)
+
         self.pages = QStackedWidget()
+        workspace_layout.addWidget(self.pages, 1)
         self.page_indexes = {}
+        self.page_names_by_index = {}
+        self.page_factories = {}
+        self.module_windows = []
         self.menu_buttons = []
         self.category_buttons = {}
         self.submenu_widgets = {}
@@ -1126,6 +1145,34 @@ class MainWindow(QMainWindow):
         for index, (name, page) in enumerate(definitions):
             self.pages.addWidget(page)
             self.page_indexes[name] = index
+            self.page_names_by_index[index] = name
+
+        # Фабрики создают независимые экземпляры разделов для отдельных окон.
+        # Все экземпляры используют общую базу данных через database.py.
+        self.page_factories = {
+            "Главная": lambda: PlaceholderPage(
+                "Главная", "Рабочая панель KRAFT 3D Manager."
+            ),
+            "Изделия": ProductsPage,
+            "Заказчики": CustomersPage,
+            "Заказы": OrdersPage,
+            "Финансы": FinancePage,
+            "Материалы": MaterialsPage,
+            "Комплектующие": ComponentsPage,
+            "Упаковка": PackagingPage,
+            "Закупки": PurchasesPage,
+            "Принтеры": lambda: PlaceholderPage(
+                "Оборудование",
+                "Оборудование, мощность, стоимость и ресурс принтеров."
+            ),
+            "Калькулятор": CalculatorPage,
+            "Отчёты": ReportsPage,
+            "Маркетплейсы": MarketplacePage,
+            "Настройки": lambda: PlaceholderPage(
+                "Настройки",
+                "Параметры программы и резервное копирование."
+            ),
+        }
 
         # Главная остаётся быстрым переходом, а рабочие разделы сгруппированы.
         home_button = QPushButton("Главная")
@@ -1197,7 +1244,7 @@ class MainWindow(QMainWindow):
 
         self.sidebar_layout.addStretch(1)
         main_layout.addWidget(sidebar)
-        main_layout.addWidget(self.pages, 1)
+        main_layout.addWidget(workspace, 1)
 
         self.change_page(self.page_indexes["Главная"])
 
@@ -1214,10 +1261,8 @@ class MainWindow(QMainWindow):
         button.style().unpolish(button)
         button.style().polish(button)
 
-    def change_page(self, index):
-        self.pages.setCurrentIndex(index)
-        page = self.pages.widget(index)
-
+    def refresh_page(self, page):
+        """Обновляет данные страницы перед показом."""
         if isinstance(page, ProductsPage):
             page.load_products()
         elif isinstance(page, CustomersPage):
@@ -1237,6 +1282,57 @@ class MainWindow(QMainWindow):
         elif isinstance(page, CalculatorPage):
             page.load_reference_data()
             page.recalculate()
+
+    def change_page(self, index):
+        self.pages.setCurrentIndex(index)
+        page = self.pages.widget(index)
+        self.open_window_button.setEnabled(
+            self.page_names_by_index.get(index) in self.page_factories
+        )
+        self.refresh_page(page)
+
+    def open_current_page_window(self):
+        index = self.pages.currentIndex()
+        page_name = self.page_names_by_index.get(index)
+        if not page_name:
+            return
+        self.open_page_window(page_name)
+
+    def open_page_window(self, page_name):
+        factory = self.page_factories.get(page_name)
+        if factory is None:
+            QMessageBox.information(
+                self, "Раздел недоступен",
+                "Для этого раздела пока нельзя открыть отдельное окно."
+            )
+            return
+
+        try:
+            page = factory()
+            window = QMainWindow(self)
+            window.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+            window.setWindowTitle(f"{page_name} | KRAFT 3D Manager")
+            window.resize(1100, 720)
+            window.setCentralWidget(page)
+            self.refresh_page(page)
+
+            self.module_windows.append(window)
+            window.destroyed.connect(
+                lambda _=None, target=window:
+                self._forget_module_window(target)
+            )
+            window.show()
+            window.raise_()
+            window.activateWindow()
+        except Exception as error:
+            QMessageBox.critical(
+                self, "Не удалось открыть раздел",
+                f"Раздел «{page_name}» не удалось открыть в отдельном окне.\n\n{error}"
+            )
+
+    def _forget_module_window(self, window):
+        if window in self.module_windows:
+            self.module_windows.remove(window)
 
 
 # ============================================================
@@ -1376,6 +1472,20 @@ QMessageBox QLabel {
 #submenuButton:hover {
     background-color: #303030;
     color: #ffffff;
+}
+
+#secondaryButton {
+    background-color: #292929;
+    color: #eeeeee;
+    border: 1px solid #454545;
+    border-radius: 6px;
+    padding: 7px 12px;
+}
+
+#secondaryButton:hover {
+    background-color: #38302a;
+    color: #ff9a3d;
+    border-color: #75421e;
 }
 
 #menuButton {
