@@ -4,10 +4,12 @@ import sqlite3
 from pathlib import Path
 
 from PySide6.QtCore import Qt
+from database import get_connection as shared_get_connection
+from ozon_finance_module import OzonFinancePage
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
-    QFileDialog, QAbstractItemView
+    QFileDialog, QAbstractItemView, QTabWidget
 )
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -15,11 +17,7 @@ DB_PATH = BASE_DIR / "data" / "kraft3d.db"
 
 
 def get_connection():
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(DB_PATH)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA foreign_keys = ON")
-    return connection
+    return shared_get_connection()
 
 
 def money(value):
@@ -296,7 +294,18 @@ class MarketplacePage(QWidget):
         self.load_data()
 
     def setup_ui(self):
-        layout = QVBoxLayout(self)
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        self.tabs = QTabWidget()
+        self.sales_tab = QWidget()
+        self.setup_sales_tab(self.sales_tab)
+        self.finance_tab = OzonFinancePage()
+        self.tabs.addTab(self.sales_tab, "Продажи и импорт")
+        self.tabs.addTab(self.finance_tab, "Финансы маркетплейсов")
+        root_layout.addWidget(self.tabs)
+
+    def setup_sales_tab(self, page_widget):
+        layout = QVBoxLayout(page_widget)
         layout.setContentsMargins(35, 30, 35, 30)
         layout.setSpacing(14)
 
@@ -388,6 +397,8 @@ class MarketplacePage(QWidget):
             QMessageBox.critical(self, "Ошибка импорта Ozon", f"Не удалось импортировать CSV:\n{error}")
 
     def load_data(self):
+        if hasattr(self, "finance_tab"):
+            self.finance_tab.load_data()
         with get_connection() as connection:
             rows = connection.execute("""
                 SELECT sale_date, report_type, status, article,
