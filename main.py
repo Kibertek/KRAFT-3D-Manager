@@ -15,6 +15,7 @@ from orders_module import OrdersPage
 from finance_module import FinancePage
 from reports_module import ReportsPage
 from marketplace_module import MarketplacePage
+from equipment_module import EquipmentPage
 from database import get_connection as shared_get_connection, initialize_database as initialize_shared_database
 
 from PySide6.QtCore import Qt, QUrl, QTimer
@@ -1129,10 +1130,7 @@ class MainWindow(QMainWindow):
             ("Комплектующие", ComponentsPage()),
             ("Упаковка", PackagingPage()),
             ("Закупки", PurchasesPage()),
-            ("Принтеры", PlaceholderPage(
-                "Оборудование",
-                "Оборудование, мощность, стоимость и ресурс принтеров."
-            )),
+            ("Принтеры", EquipmentPage()),
             ("Калькулятор", CalculatorPage()),
             ("Отчёты", ReportsPage()),
             ("Маркетплейсы", MarketplacePage()),
@@ -1161,10 +1159,7 @@ class MainWindow(QMainWindow):
             "Комплектующие": ComponentsPage,
             "Упаковка": PackagingPage,
             "Закупки": PurchasesPage,
-            "Принтеры": lambda: PlaceholderPage(
-                "Оборудование",
-                "Оборудование, мощность, стоимость и ресурс принтеров."
-            ),
+            "Принтеры": EquipmentPage,
             "Калькулятор": CalculatorPage,
             "Отчёты": ReportsPage,
             "Маркетплейсы": MarketplacePage,
@@ -1329,6 +1324,8 @@ class MainWindow(QMainWindow):
         elif isinstance(page, ReportsPage):
             page.load_report()
         elif isinstance(page, MarketplacePage):
+            page.load_data()
+        elif isinstance(page, EquipmentPage):
             page.load_data()
         elif isinstance(page, PackagingPage):
             page.load_stock()
