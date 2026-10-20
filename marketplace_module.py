@@ -300,8 +300,10 @@ class MarketplacePage(QWidget):
         self.sales_tab = QWidget()
         self.setup_sales_tab(self.sales_tab)
         self.finance_tab = OzonFinancePage()
+        self._finance_loaded = False
         self.tabs.addTab(self.sales_tab, "Продажи и импорт")
         self.tabs.addTab(self.finance_tab, "Финансы маркетплейсов")
+        self.tabs.currentChanged.connect(self.on_tab_changed)
         root_layout.addWidget(self.tabs)
 
     def setup_sales_tab(self, page_widget):
@@ -396,9 +398,13 @@ class MarketplacePage(QWidget):
         except Exception as error:
             QMessageBox.critical(self, "Ошибка импорта Ozon", f"Не удалось импортировать CSV:\n{error}")
 
-    def load_data(self):
-        if hasattr(self, "finance_tab"):
+    def on_tab_changed(self, index):
+        # Финансовые данные загружаем только при первом открытии своей вкладки.
+        if index == 1 and not self._finance_loaded:
             self.finance_tab.load_data()
+            self._finance_loaded = True
+
+    def load_data(self):
         with get_connection() as connection:
             rows = connection.execute("""
                 SELECT sale_date, report_type, status, article,
