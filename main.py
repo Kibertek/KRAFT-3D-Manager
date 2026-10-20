@@ -1930,6 +1930,20 @@ QHeaderView::section {
     font-weight: 600;
 }
 
+/* Qt отдельно рисует левый угол таблицы и вертикальный заголовок. */
+QTableCornerButton::section {
+    background-color: #303030;
+    border: 1px solid #383838;
+}
+
+QHeaderView::section:vertical {
+    background-color: #303030;
+    color: #eeeeee;
+    border: none;
+    border-right: 1px solid #383838;
+    border-bottom: 1px solid #383838;
+}
+
 QLabel {
     color: #dddddd;
     background-color: transparent;
