@@ -3,6 +3,7 @@ import sys
 import re
 import shutil
 import sqlite3
+import json
 from pathlib import Path
 
 from calculator_module import CalculatorPage
@@ -673,6 +674,130 @@ class ProductFilesDialog(QDialog):
 
 
 # ============================================================
+# ПРОСМОТР СОХРАНЁННОГО РАСЧЁТА СЕБЕСТОИМОСТИ
+# ============================================================
+
+class ProductCalculationDialog(QDialog):
+    """Показывает сохранённый в каталоге снимок расчёта изделия."""
+
+    def __init__(self, parent, product):
+        super().__init__(parent)
+        self.setWindowTitle(
+            f"Расчёт себестоимости: {product['article']} | {product['name']}"
+        )
+        self.resize(720, 650)
+        self.setMinimumSize(560, 450)
+
+        layout = QVBoxLayout(self)
+        heading = QLabel(
+            f"{product['article']} | {product['name']}"
+        )
+        heading.setObjectName("pageTitle")
+        layout.addWidget(heading)
+
+        raw_details = product["calculation_details"] or ""
+        try:
+            details = json.loads(raw_details) if raw_details.strip() else {}
+        except (TypeError, json.JSONDecodeError):
+            details = {}
+
+        self.details_view = QTextEdit()
+        self.details_view.setReadOnly(True)
+        self.details_view.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+
+        if not details:
+            self.details_view.setPlainText(
+                "Для этого изделия сохранённый подробный расчёт отсутствует.\n\n"
+                "Это может быть изделие, добавленное вручную в каталог, "
+                "или товар, созданный до сохранения подробных расчётов."
+            )
+        else:
+            lines = []
+            money_value = lambda value: (
+                f"{float(value or 0):,.2f} ₽".replace(",", " ").replace(".", ",")
+            )
+            number_value = lambda value: (
+                f"{float(value or 0):,.3f}".replace(",", " ").replace(".", ",")
+            )
+
+            lines.append("ИТОГИ РАСЧЁТА")
+            lines.append("=" * 42)
+            lines.append(f"Цена продажи: {money_value(details.get('sale_price'))}")
+            lines.append(f"Материалы: {money_value(details.get('material_cost'))}")
+            lines.append(f"Комплектующие и упаковка: {money_value(details.get('components_cost'))}")
+            lines.append(f"Производство: {money_value(details.get('production_cost'))}")
+            lines.append(f"Налог и расходы на продажу: {money_value(details.get('marketplace_cost'))}")
+            lines.append(f"Полная себестоимость: {money_value(details.get('total_cost'))}")
+            lines.append(f"Прибыль: {money_value(details.get('profit'))}")
+            lines.append(f"Рентабельность продаж: {number_value(details.get('margin'))} %")
+            lines.append(f"Наценка к прямым затратам: {number_value(details.get('markup'))} %")
+
+            lines.append("\nМАТЕРИАЛЫ")
+            lines.append("=" * 42)
+            materials = details.get("materials") or []
+            if materials:
+                for material in materials:
+                    lines.append(
+                        f"• {material.get('name', 'Материал')}: "
+                        f"{number_value(material.get('grams'))} г × "
+                        f"{money_value(material.get('price_per_gram'))}/г = "
+                        f"{money_value(material.get('cost'))}"
+                    )
+            else:
+                lines.append("Материалы не указаны.")
+
+            lines.append("\nКОМПЛЕКТУЮЩИЕ")
+            lines.append("=" * 42)
+            components = details.get("components") or []
+            if components:
+                for component in components:
+                    lines.append(
+                        f"• {component.get('name', 'Комплектующее')}: "
+                        f"{number_value(component.get('quantity'))} "
+                        f"{component.get('unit') or 'шт.'} × "
+                        f"{money_value(component.get('unit_price'))} = "
+                        f"{money_value(component.get('cost'))}"
+                    )
+            else:
+                lines.append("Комплектующие не указаны.")
+
+            packaging = details.get("packaging") or {}
+            lines.append("\nУПАКОВКА")
+            lines.append("=" * 42)
+            if packaging.get("kit_name"):
+                lines.append(
+                    f"{packaging['kit_name']}: "
+                    f"{number_value(packaging.get('quantity'))} наб. = "
+                    f"{money_value(packaging.get('cost'))}"
+                )
+            else:
+                lines.append("Отдельный набор упаковки не выбран.")
+
+            production = details.get("production_parameters") or {}
+            lines.append("\nПАРАМЕТРЫ ПРОИЗВОДСТВА И ПРОДАЖИ")
+            lines.append("=" * 42)
+            lines.append(f"Принтер: {production.get('printer_name') or 'Ручной ввод параметров'}")
+            lines.append(f"Время печати: {number_value(production.get('print_hours'))} ч")
+            lines.append(f"Мощность: {number_value(production.get('printer_watts'))} Вт")
+            lines.append(f"Тариф электричества: {money_value(production.get('electricity_tariff'))}/кВт·ч")
+            lines.append(f"Стоимость электричества: {money_value(production.get('electricity_cost'))}")
+            lines.append(f"Износ принтера: {money_value(production.get('depreciation_per_hour'))}/ч")
+            lines.append(f"Расчётный износ: {money_value(production.get('depreciation_cost'))}")
+            lines.append(f"Работа: {money_value(production.get('labor_cost'))}")
+            lines.append(f"Прочие расходы: {money_value(production.get('other_costs'))}")
+            lines.append(f"Налог: {number_value(production.get('tax_percent'))} %")
+            lines.append(f"Комиссия маркетплейса: {number_value(production.get('commission_percent'))} %")
+            lines.append(f"FBS и продвижение: {number_value(production.get('fbs_percent'))} %")
+
+            self.details_view.setPlainText("\n".join(lines))
+
+        layout.addWidget(self.details_view, 1)
+        close_button = QPushButton("Закрыть")
+        close_button.clicked.connect(self.accept)
+        layout.addWidget(close_button)
+
+
+# ============================================================
 # КАТАЛОГ ИЗДЕЛИЙ
 # ============================================================
 
@@ -759,6 +884,10 @@ class ProductsPage(QWidget):
         edit_button = QPushButton("Редактировать")
         edit_button.clicked.connect(self.edit_product)
         bottom.addWidget(edit_button)
+
+        calculation_button = QPushButton("Расчёт себестоимости")
+        calculation_button.clicked.connect(self.show_calculation)
+        bottom.addWidget(calculation_button)
 
         files_button = QPushButton("Файлы и фото")
         files_button.setObjectName("accentButton")
@@ -937,6 +1066,30 @@ class ProductsPage(QWidget):
             )
         except Exception as error:
             QMessageBox.critical(self, "Ошибка", str(error))
+
+    def show_calculation(self):
+        product_id = self.selected_product_id()
+
+        if product_id is None:
+            QMessageBox.information(
+                self,
+                "Изделие не выбрано",
+                "Выбери изделие в таблице."
+            )
+            return
+
+        with get_connection() as connection:
+            product = connection.execute(
+                "SELECT id, article, name, calculation_details FROM products WHERE id = ?",
+                (product_id,)
+            ).fetchone()
+
+        if product is None:
+            self.load_products()
+            return
+
+        dialog = ProductCalculationDialog(self, product)
+        dialog.exec()
 
     def manage_files(self):
         product_id = self.selected_product_id()
