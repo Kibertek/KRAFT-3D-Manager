@@ -16,6 +16,7 @@ from finance_module import FinancePage
 from reports_module import ReportsPage
 from marketplace_module import MarketplacePage
 from ozon_finance_module import OzonFinancePage
+from database import get_connection as shared_get_connection, initialize_database as initialize_shared_database
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QFont, QDesktopServices
@@ -47,10 +48,7 @@ def create_directories():
 
 
 def get_connection():
-    connection = sqlite3.connect(DATABASE_FILE)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA foreign_keys = ON")
-    return connection
+    return shared_get_connection()
 
 
 def initialize_database():
@@ -1472,6 +1470,7 @@ QToolTip {
 
 def main():
     create_directories()
+    initialize_shared_database()
     initialize_database()
 
     app = QApplication(sys.argv)
