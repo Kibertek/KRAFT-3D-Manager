@@ -343,10 +343,16 @@ class CalculatorPage(QWidget):
         self.materials = []
         self.components = []
         self.packaging_kits = []
+        self.printers = []
         self.material_rows = []
         self.component_rows = []
+        self.active_printer_id = None
+        self.manual_printer_watts = "150"
+        self.manual_depreciation_per_hour = "10"
 
         self.setup_ui()
+        self.manual_printer_watts = self.printer_watts.text()
+        self.manual_depreciation_per_hour = self.depreciation_per_hour.text()
         self.load_reference_data()
         self.recalculate()
 
@@ -537,6 +543,10 @@ class CalculatorPage(QWidget):
         production_group = QGroupBox("3. Производственные затраты")
         production_form = QFormLayout(production_group)
 
+        self.printer_combo = QComboBox()
+        self.printer_combo.setMinimumHeight(34)
+        self.printer_combo.addItem("Ручной ввод параметров", None)
+
         self.print_hours = NumberInput("2", decimals=2)
         self.print_hours.setToolTip("Время печати в часах, например 1,5")
 
@@ -546,6 +556,7 @@ class CalculatorPage(QWidget):
         self.labor_cost = NumberInput("0", decimals=2)
         self.other_costs = NumberInput("0", decimals=2)
 
+        production_form.addRow("Принтер из раздела «Оборудование»:", self.printer_combo)
         production_form.addRow("Время печати (ч):", self.print_hours)
         production_form.addRow("Мощность принтера (Вт):", self.printer_watts)
         production_form.addRow(
@@ -654,6 +665,8 @@ class CalculatorPage(QWidget):
         outer_layout.addWidget(scroll, 1)
 
         # Подключаем пересчёт после создания всех полей.
+        self.printer_combo.currentIndexChanged.connect(self.on_printer_changed)
+
         inputs = [
             self.print_hours,
             self.printer_watts,
@@ -737,6 +750,12 @@ class CalculatorPage(QWidget):
                     ORDER BY name COLLATE NOCASE
                 """).fetchall()
 
+                printer_rows = connection.execute("""
+                    SELECT id, name, model, power, purchase_price, resource_hours, status
+                    FROM printers
+                    ORDER BY name COLLATE NOCASE
+                """).fetchall()
+
                 kit_rows = []
                 table_names = {
                     row["name"] for row in connection.execute(
@@ -786,6 +805,41 @@ class CalculatorPage(QWidget):
                 {"id": row["id"], "name": row["name"], "price": float(row["total"] or 0)}
                 for row in kit_rows
             ]
+            selected_printer_data = self.printer_combo.currentData()
+            selected_printer_id = (
+                selected_printer_data.get("id")
+                if isinstance(selected_printer_data, dict)
+                else selected_printer_data
+            )
+            self.printers = [
+                {
+                    "id": int(row["id"]),
+                    "name": row["name"],
+                    "model": row["model"] or "",
+                    "power": float(row["power"] or 0),
+                    "purchase_price": float(row["purchase_price"] or 0),
+                    "resource_hours": float(row["resource_hours"] or 0),
+                    "status": row["status"] or "Работает",
+                }
+                for row in printer_rows
+            ]
+            self.printer_combo.blockSignals(True)
+            self.printer_combo.clear()
+            self.printer_combo.addItem("Ручной ввод параметров", None)
+            for printer in self.printers:
+                model_text = f" | {printer['model']}" if printer["model"] else ""
+                self.printer_combo.addItem(
+                    f"{printer['name']}{model_text} [{printer['status']}]",
+                    printer,
+                )
+            if selected_printer_id is not None:
+                index = next(
+                    (i for i in range(1, self.printer_combo.count())
+                     if self.printer_combo.itemData(i)["id"] == selected_printer_id),
+                    0,
+                )
+                self.printer_combo.setCurrentIndex(index)
+            self.printer_combo.blockSignals(False)
             selected_kit_id = self.packaging_kit_combo.currentData()
             self.packaging_kit_combo.blockSignals(True)
             self.packaging_kit_combo.clear()
@@ -820,6 +874,35 @@ class CalculatorPage(QWidget):
                 "Ошибка базы данных",
                 f"Не удалось загрузить справочники:\n{error}",
             )
+
+    def on_printer_changed(self, *_):
+        selected = self.printer_combo.currentData()
+
+        if selected is None:
+            self.printer_watts.setText(self.manual_printer_watts)
+            self.depreciation_per_hour.setText(self.manual_depreciation_per_hour)
+            self.active_printer_id = None
+            self.recalculate()
+            return
+
+        if self.active_printer_id is None:
+            self.manual_printer_watts = self.printer_watts.text()
+            self.manual_depreciation_per_hour = self.depreciation_per_hour.text()
+
+        self.active_printer_id = int(selected["id"])
+        self.printer_watts.setText(str(selected["power"]).replace(".", ","))
+
+        resource_hours = float(selected["resource_hours"] or 0)
+        purchase_price = float(selected["purchase_price"] or 0)
+        depreciation_rate = (
+            purchase_price / resource_hours
+            if resource_hours > 0 and purchase_price > 0
+            else 0.0
+        )
+        self.depreciation_per_hour.setText(
+            str(round(depreciation_rate, 4)).replace(".", ",")
+        )
+        self.recalculate()
 
     def add_material_row(self):
         if len(self.material_rows) >= self.MAX_MATERIALS:
@@ -1052,6 +1135,12 @@ class CalculatorPage(QWidget):
                 "cost": round(packaging_cost, 4),
             },
             "production_parameters": {
+                "printer_id": self.active_printer_id,
+                "printer_name": (
+                    next((printer["name"] for printer in self.printers
+                          if printer["id"] == self.active_printer_id), None)
+                    if self.active_printer_id is not None else None
+                ),
                 "print_hours": hours,
                 "printer_watts": watts,
                 "electricity_tariff": tariff,
