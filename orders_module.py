@@ -752,7 +752,7 @@ class OrdersPage(QWidget):
         </table>
         <div class="total">Итого: {money(order["total_price"])}</div>
         <p><b>Комментарий / требования:</b><br>{safe(order["comment"]) or "Не указаны"}</p>
-        <div class="sign">Заказчик: ____________________ &nbsp;&nbsp; Исполнитель: ____________________</div>
+        <div class="sign">Заказчик: ______________________________________________</div>
         </body></html>
         """
 
