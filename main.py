@@ -15,7 +15,6 @@ from orders_module import OrdersPage
 from finance_module import FinancePage
 from reports_module import ReportsPage
 from marketplace_module import MarketplacePage
-from ozon_finance_module import OzonFinancePage
 from database import get_connection as shared_get_connection, initialize_database as initialize_shared_database
 
 from PySide6.QtCore import Qt, QUrl
@@ -1094,7 +1093,6 @@ class MainWindow(QMainWindow):
             ("Калькулятор", CalculatorPage()),
             ("Отчёты", ReportsPage()),
             ("Маркетплейсы", MarketplacePage()),
-            ("Финансы Ozon", OzonFinancePage()),
             ("Настройки", PlaceholderPage(
                 "Настройки",
                 "Параметры программы и резервное копирование."
@@ -1145,8 +1143,6 @@ class MainWindow(QMainWindow):
         elif isinstance(page, ReportsPage):
             page.load_report()
         elif isinstance(page, MarketplacePage):
-            page.load_data()
-        elif isinstance(page, OzonFinancePage):
             page.load_data()
         elif isinstance(page, MarketplacePage):
             page.load_data()
