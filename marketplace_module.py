@@ -291,7 +291,6 @@ class MarketplacePage(QWidget):
         super().__init__(parent)
         init_marketplace_tables()
         self.setup_ui()
-        self.load_data()
 
     def setup_ui(self):
         root_layout = QVBoxLayout(self)

@@ -1254,6 +1254,40 @@ QWidget {
     font-size: 14px;
 }
 
+QStackedWidget,
+QTabWidget,
+QTabWidget::pane,
+QTabWidget QWidget {
+    background-color: #181818;
+}
+
+QTabWidget::pane {
+    border: 1px solid #303030;
+    border-radius: 6px;
+    top: -1px;
+}
+
+QTabBar::tab {
+    background-color: #292929;
+    color: #bdbdbd;
+    border: 1px solid #353535;
+    padding: 10px 16px;
+    margin-right: 3px;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+}
+
+QTabBar::tab:selected {
+    background-color: #38302a;
+    color: #ff9a3d;
+    border-color: #75421e;
+}
+
+QTabBar::tab:hover:!selected {
+    background-color: #353535;
+    color: #ffffff;
+}
+
 QDialog {
     background-color: #202020;
     color: #eeeeee;
