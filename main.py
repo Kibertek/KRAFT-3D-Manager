@@ -1080,6 +1080,7 @@ class MainWindow(QMainWindow):
         )
 
         menu_content = QWidget()
+        menu_content.setObjectName("sidebarMenuContent")
         self.sidebar_layout = QVBoxLayout(menu_content)
         self.sidebar_layout.setContentsMargins(0, 0, 2, 0)
         self.sidebar_layout.setSpacing(4)
@@ -1158,6 +1159,7 @@ class MainWindow(QMainWindow):
             self.menu_buttons.append(category_button)
 
             submenu = QWidget()
+            submenu.setObjectName("submenuContainer")
             submenu_layout = QVBoxLayout(submenu)
             submenu_layout.setContentsMargins(8, 0, 0, 4)
             submenu_layout.setSpacing(2)
@@ -1285,8 +1287,31 @@ QMessageBox QLabel {
 }
 
 #sidebarScroll {
-    background-color: transparent;
+    background-color: #202020;
     border: none;
+}
+
+#sidebarScroll QWidget,
+#sidebarMenuContent,
+#submenuContainer {
+    background-color: #202020;
+}
+
+#sidebarScroll QScrollBar:vertical {
+    background-color: #202020;
+    width: 8px;
+    margin: 0;
+}
+
+#sidebarScroll QScrollBar::handle:vertical {
+    background-color: #505050;
+    border-radius: 4px;
+    min-height: 24px;
+}
+
+#sidebarScroll QScrollBar::add-line:vertical,
+#sidebarScroll QScrollBar::sub-line:vertical {
+    height: 0;
 }
 
 #categoryButton {
