@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QPushButton,
     QComboBox, QLineEdit, QTextEdit, QDateEdit, QDoubleSpinBox, QDialog,
     QDialogButtonBox, QTableWidget, QTableWidgetItem, QHeaderView,
-    QAbstractItemView, QMessageBox
+    QAbstractItemView, QMessageBox, QInputDialog
 )
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -216,7 +216,12 @@ class PurchaseDialog(QDialog):
 
         form.addRow("Дата закупки:", self.date_input)
         form.addRow("Тип позиции:", self.type_input)
-        form.addRow("Позиция:", self.item_input)
+        item_row = QHBoxLayout()
+        item_row.addWidget(self.item_input, 1)
+        self.add_part_button = QPushButton("+ Новая запчасть")
+        self.add_part_button.clicked.connect(self.create_part_item)
+        item_row.addWidget(self.add_part_button)
+        form.addRow("Позиция:", item_row)
         form.addRow("Для принтера:", self.printer_input)
         form.addRow("Количество:", self.quantity_input)
         form.addRow("Цена за единицу:", self.price_input)
@@ -268,6 +273,47 @@ class PurchaseDialog(QDialog):
     def update_printer_visibility(self, *_):
         is_part = self.type_input.currentData() == "part"
         self.printer_input.setEnabled(is_part)
+        self.add_part_button.setVisible(is_part)
+
+    def create_part_item(self):
+        if self.type_input.currentData() != "part":
+            return
+        name, accepted = QInputDialog.getText(
+            self, "Новая запчасть", "Название запчасти:"
+        )
+        name = name.strip()
+        if not accepted or not name:
+            return
+        try:
+            with get_connection() as connection:
+                existing = connection.execute(
+                    "SELECT id FROM components WHERE name = ? COLLATE NOCASE LIMIT 1",
+                    (name,)
+                ).fetchone()
+                if existing:
+                    QMessageBox.information(
+                        self, "Позиция уже существует",
+                        "Такая позиция уже есть в справочнике. Она будет выбрана в списке."
+                    )
+                    self.load_items()
+                    index = self.item_input.findText(name, Qt.MatchFlag.MatchFixedString)
+                    if index >= 0:
+                        self.item_input.setCurrentIndex(index)
+                    return
+                cursor = connection.execute(
+                    """INSERT INTO components (name, category, unit, price, quantity, min_quantity, supplier, notes)
+                       VALUES (?, 'Запчасти принтера', 'шт.', 0, 0, 0, '', '')""",
+                    (name,)
+                )
+                new_id = cursor.lastrowid
+            self.load_items()
+            for index in range(self.item_input.count()):
+                row = self.item_input.itemData(index)
+                if row and row.get("id") == new_id:
+                    self.item_input.setCurrentIndex(index)
+                    break
+        except Exception as error:
+            QMessageBox.critical(self, "Не удалось создать запчасть", str(error))
 
     def load_purchase_values(self):
         purchase = self.purchase
