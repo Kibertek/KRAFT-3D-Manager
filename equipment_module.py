@@ -604,6 +604,7 @@ class EquipmentPage(QWidget):
                 LEFT JOIN component_printer_compatibility cp ON cp.component_id = c.id
                 LEFT JOIN printers p ON p.id = cp.printer_id
                 WHERE c.name LIKE ?
+                  AND LOWER(COALESCE(c.category, '')) NOT LIKE '%упаков%'
                 GROUP BY c.id, c.name
                 ORDER BY c.name COLLATE NOCASE
             """, (pattern,)).fetchall()
@@ -623,7 +624,11 @@ class EquipmentPage(QWidget):
         item = self.compatibility_table.item(row, 0) if row >= 0 else None
         component_id = item.data(Qt.ItemDataRole.UserRole) if item else None
         with get_connection() as connection:
-            components = connection.execute("SELECT id, name FROM components ORDER BY name").fetchall()
+            components = connection.execute("""
+                SELECT id, name FROM components
+                WHERE LOWER(COALESCE(category, '')) NOT LIKE '%упаков%'
+                ORDER BY name COLLATE NOCASE
+            """).fetchall()
             printers = connection.execute("SELECT id, name, model FROM printers ORDER BY name").fetchall()
         if not components:
             QMessageBox.information(self, "Нет комплектующих", "Сначала добавь запчасть/комплектующее в разделе «Склад → Комплектующие».")
