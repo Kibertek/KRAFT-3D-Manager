@@ -285,6 +285,59 @@ class CompatibilityDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Совместимость комплектующего")
         self.setMinimumWidth(480)
+        self.setStyleSheet("""
+            QDialog, QWidget {
+                background-color: #202020;
+                color: #eeeeee;
+            }
+            QLabel {
+                color: #eeeeee;
+                background-color: transparent;
+            }
+            QComboBox {
+                background-color: #303030;
+                color: #eeeeee;
+                border: 1px solid #555555;
+                border-radius: 5px;
+                padding: 6px;
+                min-height: 22px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #303030;
+                color: #eeeeee;
+                selection-background-color: #75421e;
+                selection-color: #ffffff;
+                border: 1px solid #555555;
+                outline: 0;
+            }
+            QListWidget {
+                background-color: #252525;
+                color: #eeeeee;
+                border: 1px solid #454545;
+                alternate-background-color: #2d2d2d;
+                selection-background-color: #75421e;
+                selection-color: #ffffff;
+            }
+            QListWidget::item {
+                padding: 7px;
+            }
+            QPushButton {
+                background-color: #303030;
+                color: #eeeeee;
+                border: 1px solid #555555;
+                border-radius: 5px;
+                padding: 7px 10px;
+            }
+            QPushButton:hover {
+                background-color: #414141;
+            }
+            QPushButton#accentButton {
+                background-color: #ff7a00;
+                color: #ffffff;
+                border: none;
+                font-weight: 600;
+            }
+        """)
         layout = QVBoxLayout(self)
         form = QFormLayout()
         self.component_input = QComboBox()
