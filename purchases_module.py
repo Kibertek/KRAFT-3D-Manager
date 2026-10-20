@@ -314,6 +314,8 @@ class PurchaseDialog(QDialog):
                            COALESCE(price, 0) AS price, COALESCE(quantity, 0) AS quantity
                     FROM components
                     WHERE TRIM(COALESCE(category, '')) NOT IN ('Упаковка', 'упаковка')
+                      AND name NOT LIKE '%Цепоч%'
+                      AND name NOT LIKE '%цепоч%'
                     ORDER BY name COLLATE NOCASE
                 """).fetchall()
             else:
@@ -549,6 +551,11 @@ class PurchasesPage(QWidget):
                     connection, purchase_id, new_data,
                     old_data.get("finance_transaction_id")
                 )
+                if new_data.get("item_type") == "part" and new_data.get("printer_id"):
+                    connection.execute(
+                        "INSERT OR IGNORE INTO component_printer_compatibility (component_id, printer_id) VALUES (?, ?)",
+                        (new_data["item_id"], new_data["printer_id"])
+                    )
 
             self.load_purchases()
             QMessageBox.information(
