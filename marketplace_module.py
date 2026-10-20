@@ -72,6 +72,17 @@ def init_marketplace_tables():
             CREATE INDEX IF NOT EXISTS idx_marketplace_sales_article
             ON marketplace_sales(article)
         """)
+        connection.execute("""CREATE TABLE IF NOT EXISTS stock_movements (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL,
+            movement_type TEXT NOT NULL CHECK(movement_type IN ('sale','return','writeoff','reserve','release')),
+            quantity REAL NOT NULL CHECK(quantity > 0), movement_date TEXT NOT NULL,
+            source_type TEXT NOT NULL DEFAULT 'manual', source_id TEXT NOT NULL DEFAULT '',
+            notes TEXT DEFAULT '', created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(product_id) REFERENCES products(id))""")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_stock_movements_product ON stock_movements(product_id)")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_stock_movements_date ON stock_movements(movement_date)")
+        connection.execute("""CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_movements_source
+            ON stock_movements(source_type, source_id, movement_type) WHERE source_id != ''""")
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_marketplace_sales_date
             ON marketplace_sales(sale_date)
@@ -253,7 +264,7 @@ def _import_rows(path, report_type, rows):
                 duplicates += 1
                 continue
 
-            connection.execute("""
+            sale_cursor = connection.execute("""
                 INSERT INTO marketplace_sales (
                     marketplace, report_type, import_id, external_key,
                     order_number, shipment_number, sale_date, status,
@@ -276,6 +287,22 @@ def _import_rows(path, report_type, rows):
                 row.get("discount_amount", 0), product_id,
                 repr(row),
             ))
+            sale_id = sale_cursor.lastrowid
+            if report_type == "Реализация" and product_id:
+                sale_quantity = _number(row.get("quantity", 0))
+                return_quantity = _number(row.get("return_quantity", 0))
+                if sale_quantity > 0:
+                    connection.execute("""INSERT OR IGNORE INTO stock_movements
+                        (product_id, movement_type, quantity, movement_date, source_type, source_id, notes)
+                        VALUES (?, 'sale', ?, COALESCE(?, date('now')), 'ozon_realization', ?, ?)""",
+                        (product_id, sale_quantity, row.get("sale_date"), str(sale_id),
+                         f"Ozon, отчёт о реализации, артикул {article}"))
+                if return_quantity > 0:
+                    connection.execute("""INSERT OR IGNORE INTO stock_movements
+                        (product_id, movement_type, quantity, movement_date, source_type, source_id, notes)
+                        VALUES (?, 'return', ?, COALESCE(?, date('now')), 'ozon_realization', ?, ?)""",
+                        (product_id, return_quantity, row.get("sale_date"), str(sale_id),
+                         f"Ozon, возврат, артикул {article}"))
             added += 1
 
         connection.execute(
