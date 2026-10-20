@@ -1310,6 +1310,9 @@ class MainWindow(QMainWindow):
         try:
             page = factory()
             window = QMainWindow(self)
+            # У окна есть родитель для управления временем жизни, но оно остаётся
+            # самостоятельным верхнеуровневым окном, а не дочерним виджетом.
+            window.setWindowFlag(Qt.WindowType.Window, True)
             window.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
             window.setWindowTitle(f"{page_name} | KRAFT 3D Manager")
             window.resize(1100, 720)
