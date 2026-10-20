@@ -25,7 +25,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QTextEdit, QComboBox, QDialog,
     QDialogButtonBox, QFormLayout, QTableWidget,
     QTableWidgetItem, QHeaderView, QMessageBox,
-    QAbstractItemView, QFileDialog, QDoubleSpinBox
+    QAbstractItemView, QFileDialog, QDoubleSpinBox, QScrollArea
 )
 
 
@@ -1043,7 +1043,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("KRAFT 3D Manager")
-        self.setMinimumSize(1100, 700)
+        self.setMinimumSize(1000, 650)
         self.create_interface()
 
     def create_interface(self):
@@ -1056,23 +1056,46 @@ class MainWindow(QMainWindow):
 
         sidebar = QFrame()
         sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(235)
+        sidebar.setFixedWidth(245)
 
-        sidebar_layout = QVBoxLayout(sidebar)
-        sidebar_layout.setContentsMargins(15, 22, 15, 18)
-        sidebar_layout.setSpacing(6)
+        sidebar_outer_layout = QVBoxLayout(sidebar)
+        sidebar_outer_layout.setContentsMargins(10, 16, 10, 12)
+        sidebar_outer_layout.setSpacing(8)
 
         logo = QLabel("KRAFT 3D")
         logo.setObjectName("logo")
-
         logo_subtitle = QLabel("MANAGER")
         logo_subtitle.setObjectName("logoSubtitle")
+        sidebar_outer_layout.addWidget(logo)
+        sidebar_outer_layout.addWidget(logo_subtitle)
+        sidebar_outer_layout.addSpacing(8)
 
-        sidebar_layout.addWidget(logo)
-        sidebar_layout.addWidget(logo_subtitle)
-        sidebar_layout.addSpacing(25)
+        # Прокрутка позволяет меню оставаться читаемым даже при небольшом окне.
+        sidebar_scroll = QScrollArea()
+        sidebar_scroll.setObjectName("sidebarScroll")
+        sidebar_scroll.setWidgetResizable(True)
+        sidebar_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        sidebar_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+
+        menu_content = QWidget()
+        self.sidebar_layout = QVBoxLayout(menu_content)
+        self.sidebar_layout.setContentsMargins(0, 0, 2, 0)
+        self.sidebar_layout.setSpacing(4)
+
+        sidebar_scroll.setWidget(menu_content)
+        sidebar_outer_layout.addWidget(sidebar_scroll, 1)
+
+        version = QLabel("KRAFT 3D Manager\nv0.6.0")
+        version.setObjectName("version")
+        sidebar_outer_layout.addWidget(version)
 
         self.pages = QStackedWidget()
+        self.page_indexes = {}
+        self.menu_buttons = []
+        self.category_buttons = {}
+        self.submenu_widgets = {}
 
         definitions = [
             ("Главная", PlaceholderPage(
@@ -1087,8 +1110,8 @@ class MainWindow(QMainWindow):
             ("Упаковка", PackagingPage()),
             ("Закупки", PurchasesPage()),
             ("Принтеры", PlaceholderPage(
-                "Принтеры",
-                "Оборудование, мощность, стоимость и ресурс."
+                "Оборудование",
+                "Оборудование, мощность, стоимость и ресурс принтеров."
             )),
             ("Калькулятор", CalculatorPage()),
             ("Отчёты", ReportsPage()),
@@ -1099,39 +1122,100 @@ class MainWindow(QMainWindow):
             )),
         ]
 
-        self.menu_buttons = []
-
-        for _, page in definitions:
+        for index, (name, page) in enumerate(definitions):
             self.pages.addWidget(page)
+            self.page_indexes[name] = index
 
-        for index, (name, _) in enumerate(definitions):
-            button = QPushButton(name)
-            button.setObjectName("menuButton")
-            button.setCursor(Qt.CursorShape.PointingHandCursor)
-            button.clicked.connect(
-                lambda checked=False, i=index: self.change_page(i)
-            )
-            sidebar_layout.addWidget(button)
-            self.menu_buttons.append(button)
+        # Главная остаётся быстрым переходом, а рабочие разделы сгруппированы.
+        home_button = QPushButton("Главная")
+        home_button.setObjectName("menuButton")
+        home_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        home_button.setMinimumHeight(38)
+        home_button.clicked.connect(
+            lambda checked=False: self.change_page(self.page_indexes["Главная"])
+        )
+        self.sidebar_layout.addWidget(home_button)
+        self.menu_buttons.append(home_button)
 
-        sidebar_layout.addStretch()
+        groups = [
+            ("Финансы", ["Финансы"]),
+            ("Склад", ["Изделия", "Материалы", "Комплектующие", "Упаковка", "Закупки"]),
+            ("Заказы", ["Заказчики", "Заказы"]),
+            ("Маркетплейсы", ["Маркетплейсы"]),
+            ("Оборудование", ["Принтеры"]),
+            ("Калькулятор", ["Калькулятор"]),
+            ("Отчёты", ["Отчёты"]),
+            ("Настройки", ["Настройки"]),
+        ]
 
-        version = QLabel("KRAFT 3D Manager\nv0.6.0")
-        version.setObjectName("version")
-        sidebar_layout.addWidget(version)
+        for category, page_names in groups:
+            category_button = QPushButton(category)
+            category_button.setObjectName("categoryButton")
+            category_button.setCursor(Qt.CursorShape.PointingHandCursor)
+            category_button.setMinimumHeight(40)
+            self.sidebar_layout.addWidget(category_button)
+            self.category_buttons[category] = category_button
+            self.menu_buttons.append(category_button)
 
+            submenu = QWidget()
+            submenu_layout = QVBoxLayout(submenu)
+            submenu_layout.setContentsMargins(8, 0, 0, 4)
+            submenu_layout.setSpacing(2)
+
+            if len(page_names) == 1:
+                # Одностраничные категории открываются сразу.
+                page_name = page_names[0]
+                category_button.clicked.connect(
+                    lambda checked=False, name=page_name:
+                    self.change_page(self.page_indexes[name])
+                )
+                submenu.hide()
+            else:
+                submenu.hide()
+                category_button.clicked.connect(
+                    lambda checked=False, name=category:
+                    self.toggle_submenu(name)
+                )
+
+                for page_name in page_names:
+                    sub_button = QPushButton(page_name)
+                    sub_button.setObjectName("submenuButton")
+                    sub_button.setCursor(Qt.CursorShape.PointingHandCursor)
+                    sub_button.setMinimumHeight(34)
+                    sub_button.setToolTip(page_name)
+                    sub_button.clicked.connect(
+                        lambda checked=False, name=page_name:
+                        self.change_page(self.page_indexes[name])
+                    )
+                    submenu_layout.addWidget(sub_button)
+                    self.menu_buttons.append(sub_button)
+
+            self.sidebar_layout.addWidget(submenu)
+            self.submenu_widgets[category] = submenu
+
+        self.sidebar_layout.addStretch(1)
         main_layout.addWidget(sidebar)
-        main_layout.addWidget(self.pages)
+        main_layout.addWidget(self.pages, 1)
 
-        self.change_page(0)
+        self.change_page(self.page_indexes["Главная"])
 
-    # ИСПРАВЛЕНИЕ: метод теперь находится внутри MainWindow.
+    def toggle_submenu(self, category):
+        submenu = self.submenu_widgets.get(category)
+        if submenu is None:
+            return
+
+        should_show = not submenu.isVisible()
+        submenu.setVisible(should_show)
+
+        button = self.category_buttons[category]
+        button.setProperty("expanded", should_show)
+        button.style().unpolish(button)
+        button.style().polish(button)
+
     def change_page(self, index):
         self.pages.setCurrentIndex(index)
-
         page = self.pages.widget(index)
 
-        # Обновляем справочники при переходе на соответствующие страницы.
         if isinstance(page, ProductsPage):
             page.load_products()
         elif isinstance(page, CustomersPage):
@@ -1142,8 +1226,6 @@ class MainWindow(QMainWindow):
             page.load_transactions()
         elif isinstance(page, ReportsPage):
             page.load_report()
-        elif isinstance(page, MarketplacePage):
-            page.load_data()
         elif isinstance(page, MarketplacePage):
             page.load_data()
         elif isinstance(page, PackagingPage):
@@ -1200,6 +1282,41 @@ QMessageBox QLabel {
     color: #ff7a00;
     font-size: 12px;
     font-weight: 700;
+}
+
+#sidebarScroll {
+    background-color: transparent;
+    border: none;
+}
+
+#categoryButton {
+    background-color: #292929;
+    color: #eeeeee;
+    border: 1px solid #353535;
+    border-radius: 7px;
+    padding: 9px 10px;
+    text-align: left;
+    font-weight: 600;
+}
+
+#categoryButton:hover, #categoryButton[expanded="true"] {
+    background-color: #38302a;
+    color: #ff9a3d;
+    border-color: #75421e;
+}
+
+#submenuButton {
+    background-color: transparent;
+    color: #bdbdbd;
+    border: none;
+    border-radius: 6px;
+    padding: 7px 10px;
+    text-align: left;
+}
+
+#submenuButton:hover {
+    background-color: #303030;
+    color: #ffffff;
 }
 
 #menuButton {
