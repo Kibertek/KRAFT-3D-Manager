@@ -604,7 +604,9 @@ class EquipmentPage(QWidget):
                 LEFT JOIN component_printer_compatibility cp ON cp.component_id = c.id
                 LEFT JOIN printers p ON p.id = cp.printer_id
                 WHERE c.name LIKE ?
-                  AND TRIM(COALESCE(c.category, '')) <> 'Упаковка'
+                  AND TRIM(COALESCE(c.category, '')) NOT IN ('Упаковка', 'упаковка')
+                  AND c.name NOT LIKE '%Цепоч%'
+                  AND c.name NOT LIKE '%цепоч%'
                 GROUP BY c.id, c.name
                 ORDER BY c.name COLLATE NOCASE
             """, (pattern,)).fetchall()
@@ -626,7 +628,9 @@ class EquipmentPage(QWidget):
         with get_connection() as connection:
             components = connection.execute("""
                 SELECT id, name FROM components
-                WHERE TRIM(COALESCE(category, '')) <> 'Упаковка'
+                WHERE TRIM(COALESCE(category, '')) NOT IN ('Упаковка', 'упаковка')
+                  AND name NOT LIKE '%Цепоч%'
+                  AND name NOT LIKE '%цепоч%'
                 ORDER BY name COLLATE NOCASE
             """).fetchall()
             printers = connection.execute("SELECT id, name, model FROM printers ORDER BY name").fetchall()
