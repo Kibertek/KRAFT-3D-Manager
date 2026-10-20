@@ -348,11 +348,13 @@ class CalculatorPage(QWidget):
         self.component_rows = []
         self.active_printer_id = None
         self.manual_printer_watts = "150"
-        self.manual_depreciation_per_hour = "10"
 
         self.setup_ui()
         self.manual_printer_watts = self.printer_watts.text()
-        self.manual_depreciation_per_hour = self.depreciation_per_hour.text()
+        self.depreciation_per_hour.setToolTip(
+            "Износ за час задаётся вручную. Ресурс до обслуживания в карточке принтера "
+            "не является полным сроком службы для расчёта амортизации."
+        )
         self.load_reference_data()
         self.recalculate()
 
@@ -880,28 +882,15 @@ class CalculatorPage(QWidget):
 
         if selected is None:
             self.printer_watts.setText(self.manual_printer_watts)
-            self.depreciation_per_hour.setText(self.manual_depreciation_per_hour)
             self.active_printer_id = None
             self.recalculate()
             return
 
         if self.active_printer_id is None:
             self.manual_printer_watts = self.printer_watts.text()
-            self.manual_depreciation_per_hour = self.depreciation_per_hour.text()
 
         self.active_printer_id = int(selected["id"])
         self.printer_watts.setText(str(selected["power"]).replace(".", ","))
-
-        resource_hours = float(selected["resource_hours"] or 0)
-        purchase_price = float(selected["purchase_price"] or 0)
-        depreciation_rate = (
-            purchase_price / resource_hours
-            if resource_hours > 0 and purchase_price > 0
-            else 0.0
-        )
-        self.depreciation_per_hour.setText(
-            str(round(depreciation_rate, 4)).replace(".", ",")
-        )
         self.recalculate()
 
     def add_material_row(self):
