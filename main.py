@@ -17,6 +17,7 @@ from finance_module import FinancePage
 from reports_module import ReportsPage
 from marketplace_module import MarketplacePage
 from equipment_module import EquipmentPage
+from production_module import ProductionPage
 from database import get_connection as shared_get_connection, initialize_database as initialize_shared_database
 
 from PySide6.QtCore import Qt, QUrl, QTimer
@@ -1276,6 +1277,7 @@ class MainWindow(QMainWindow):
                 "Главная", "Рабочая панель KRAFT 3D Manager."
             )),
             ("Изделия", ProductsPage()),
+            ("Производство", ProductionPage()),
             ("Заказчики", CustomersPage()),
             ("Заказы", OrdersPage()),
             ("Финансы", FinancePage()),
@@ -1305,6 +1307,7 @@ class MainWindow(QMainWindow):
                 "Главная", "Рабочая панель KRAFT 3D Manager."
             ),
             "Изделия": ProductsPage,
+            "Производство": ProductionPage,
             "Заказчики": CustomersPage,
             "Заказы": OrdersPage,
             "Финансы": FinancePage,
@@ -1335,7 +1338,7 @@ class MainWindow(QMainWindow):
 
         groups = [
             ("Финансы", ["Финансы"]),
-            ("Склад", ["Изделия", "Материалы", "Комплектующие", "Упаковка", "Закупки"]),
+            ("Склад", ["Изделия", "Производство", "Материалы", "Комплектующие", "Упаковка", "Закупки"]),
             ("Заказы", ["Заказчики", "Заказы"]),
             ("Маркетплейсы", ["Маркетплейсы"]),
             ("Оборудование", ["Принтеры"]),
