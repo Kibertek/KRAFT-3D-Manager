@@ -758,11 +758,31 @@ class CalculatorPage(QWidget):
                     )
                     return
 
-                component_rows = connection.execute("""
-                    SELECT id, name, price, unit
-                    FROM components
-                    ORDER BY name COLLATE NOCASE
-                """).fetchall()
+                table_names = {
+                    row["name"] for row in connection.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table'"
+                    ).fetchall()
+                }
+
+                # Запчасти, привязанные к принтерам, не должны попадать
+                # в обычные комплектующие калькулятора.
+                if "component_printer_compatibility" in table_names:
+                    component_rows = connection.execute("""
+                        SELECT c.id, c.name, c.price, c.unit
+                        FROM components c
+                        WHERE NOT EXISTS (
+                            SELECT 1
+                            FROM component_printer_compatibility pc
+                            WHERE pc.component_id = c.id
+                        )
+                        ORDER BY c.name COLLATE NOCASE
+                    """).fetchall()
+                else:
+                    component_rows = connection.execute("""
+                        SELECT id, name, price, unit
+                        FROM components
+                        ORDER BY name COLLATE NOCASE
+                    """).fetchall()
 
                 printer_rows = connection.execute("""
                     SELECT id, name, model, power, purchase_price, resource_hours, status
@@ -771,13 +791,25 @@ class CalculatorPage(QWidget):
                 """).fetchall()
 
                 kit_rows = []
-                table_names = {
-                    row["name"] for row in connection.execute(
-                        "SELECT name FROM sqlite_master WHERE type='table'"
-                    ).fetchall()
-                }
                 if {"packaging_kits", "packaging_kit_items", "packaging_labels"}.issubset(table_names):
-                    kit_rows = connection.execute("""
+                    if "component_printer_compatibility" in table_names:
+                        component_join = """
+                        LEFT JOIN components c
+                            ON i.item_type = 'component'
+                           AND i.item_id = c.id
+                           AND NOT EXISTS (
+                               SELECT 1
+                               FROM component_printer_compatibility pc
+                               WHERE pc.component_id = c.id
+                           )
+                        """
+                    else:
+                        component_join = """
+                        LEFT JOIN components c
+                            ON i.item_type = 'component' AND i.item_id = c.id
+                        """
+
+                    kit_query = f"""
                         SELECT k.id, k.name,
                                COALESCE(SUM(
                                    CASE WHEN i.item_type = 'component' THEN COALESCE(c.price, 0)
@@ -786,11 +818,12 @@ class CalculatorPage(QWidget):
                                ), 0) AS total
                         FROM packaging_kits k
                         LEFT JOIN packaging_kit_items i ON i.kit_id = k.id
-                        LEFT JOIN components c ON i.item_type = 'component' AND i.item_id = c.id
+                        {component_join}
                         LEFT JOIN packaging_labels l ON i.item_type = 'label' AND i.item_id = l.id
                         GROUP BY k.id, k.name
                         ORDER BY k.name COLLATE NOCASE
-                    """).fetchall()
+                    """
+                    kit_rows = connection.execute(kit_query).fetchall()
 
             for material in material_rows:
                 weight = float(material["spool_weight"] or 0)
