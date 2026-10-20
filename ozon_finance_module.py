@@ -326,7 +326,6 @@ class OzonFinancePage(QWidget):
         super().__init__(parent)
         init_ozon_finance_tables()
         self.setup_ui()
-        self.load_data()
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
