@@ -17,7 +17,7 @@ from reports_module import ReportsPage
 from marketplace_module import MarketplacePage
 from database import get_connection as shared_get_connection, initialize_database as initialize_shared_database
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt, QUrl, QTimer
 from PySide6.QtGui import QFont, QDesktopServices
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QFrame, QLabel,
@@ -1247,6 +1247,61 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(workspace, 1)
 
         self.change_page(self.page_indexes["Главная"])
+        self._start_database_change_monitor()
+
+    def _start_database_change_monitor(self):
+        """Следит за изменениями в общей SQLite-базе из других окон."""
+        self._database_monitor_connection = get_connection()
+        self._last_database_version = self._read_database_version()
+        self._database_monitor_timer = QTimer(self)
+        self._database_monitor_timer.setInterval(2500)
+        self._database_monitor_timer.timeout.connect(
+            self._check_database_changes
+        )
+        self._database_monitor_timer.start()
+
+    def _read_database_version(self):
+        row = self._database_monitor_connection.execute(
+            "PRAGMA data_version"
+        ).fetchone()
+        return int(row[0])
+
+    def _check_database_changes(self):
+        """Обновляет видимые разделы, если другая вкладка/окно сохранила данные."""
+        try:
+            current_version = self._read_database_version()
+            if current_version == self._last_database_version:
+                return
+
+            self._last_database_version = current_version
+
+            # Обновляем активный раздел основного окна.
+            current_page = self.pages.currentWidget()
+            if current_page is not None and current_page.isVisible():
+                self.refresh_page(current_page)
+
+            # Обновляем только открытые окна, чтобы не тратить время на скрытые.
+            for window in list(self.module_windows):
+                if not window.isVisible():
+                    continue
+                page = window.centralWidget()
+                if page is not None:
+                    self.refresh_page(page)
+
+        except (sqlite3.Error, RuntimeError) as error:
+            # Ошибка мониторинга не должна закрывать приложение.
+            print(f"Не удалось проверить изменения базы данных: {error}")
+
+    def closeEvent(self, event):
+        timer = getattr(self, "_database_monitor_timer", None)
+        if timer is not None:
+            timer.stop()
+
+        connection = getattr(self, "_database_monitor_connection", None)
+        if connection is not None:
+            connection.close()
+
+        super().closeEvent(event)
 
     def toggle_submenu(self, category):
         submenu = self.submenu_widgets.get(category)
