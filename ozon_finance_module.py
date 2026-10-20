@@ -103,7 +103,8 @@ def init_ozon_finance_tables():
             SELECT id, accrual_id, accrual_date, service_group, accrual_type,
                    article, sku, product_name, quantity, seller_price, service_date,
                    sales_platform, work_scheme, commission_percent,
-                   localization_index_percent, delivery_time_hours, amount_total
+                   localization_index_percent, delivery_time_hours, amount_total,
+                   row_hash
             FROM marketplace_accruals
             ORDER BY id
         """).fetchall()
