@@ -18,6 +18,8 @@ from reports_module import ReportsPage
 from marketplace_module import MarketplacePage
 from equipment_module import EquipmentPage
 from production_module import ProductionPage
+from inventory_module import InventoryPage, initialize_inventory_tables
+from inventory_purchase_bridge import initialize_purchase_stock_triggers
 from database import get_connection as shared_get_connection, initialize_database as initialize_shared_database
 
 from PySide6.QtCore import Qt, QUrl, QTimer
@@ -1285,6 +1287,7 @@ class MainWindow(QMainWindow):
             ("Комплектующие", ComponentsPage()),
             ("Упаковка", PackagingPage()),
             ("Закупки", PurchasesPage()),
+            ("Склад", InventoryPage()),
             ("Принтеры", EquipmentPage()),
             ("Калькулятор", CalculatorPage()),
             ("Отчёты", ReportsPage()),
@@ -1315,6 +1318,7 @@ class MainWindow(QMainWindow):
             "Комплектующие": ComponentsPage,
             "Упаковка": PackagingPage,
             "Закупки": PurchasesPage,
+            "Склад": InventoryPage,
             "Принтеры": EquipmentPage,
             "Калькулятор": CalculatorPage,
             "Отчёты": ReportsPage,
@@ -1338,7 +1342,7 @@ class MainWindow(QMainWindow):
 
         groups = [
             ("Финансы", ["Финансы"]),
-            ("Склад", ["Изделия", "Производство", "Материалы", "Комплектующие", "Упаковка", "Закупки"]),
+            ("Склад", ["Склад", "Изделия", "Производство", "Материалы", "Комплектующие", "Упаковка", "Закупки"]),
             ("Заказы", ["Заказчики", "Заказы"]),
             ("Маркетплейсы", ["Маркетплейсы"]),
             ("Оборудование", ["Принтеры"]),
@@ -1483,6 +1487,8 @@ class MainWindow(QMainWindow):
             page.load_data()
         elif isinstance(page, EquipmentPage):
             page.load_data()
+        elif isinstance(page, InventoryPage):
+            page.load_stock()
         elif isinstance(page, PackagingPage):
             page.load_stock()
             page.load_labels()
@@ -1979,6 +1985,8 @@ def main():
     create_directories()
     initialize_shared_database()
     initialize_database()
+    initialize_inventory_tables()
+    initialize_purchase_stock_triggers()
 
     app = QApplication(sys.argv)
     app.setApplicationName("KRAFT 3D Manager")
