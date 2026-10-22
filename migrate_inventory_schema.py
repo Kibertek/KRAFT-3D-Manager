@@ -5,6 +5,7 @@ BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "data" / "kraft3d.db"
 
 # Missing columns are added in place. Existing columns and rows are preserved.
+# ALTER TABLE cannot add a column with CURRENT_TIMESTAMP as its default on SQLite.
 REQUIRED_COLUMNS = {
     "movement_date": "TEXT NOT NULL DEFAULT ''",
     "item_type": "TEXT NOT NULL DEFAULT 'component'",
@@ -17,7 +18,7 @@ REQUIRED_COLUMNS = {
     "source": "TEXT DEFAULT ''",
     "source_id": "INTEGER",
     "comment": "TEXT DEFAULT ''",
-    "created_at": "TEXT DEFAULT CURRENT_TIMESTAMP",
+    "created_at": "TEXT DEFAULT ''",
 }
 
 
