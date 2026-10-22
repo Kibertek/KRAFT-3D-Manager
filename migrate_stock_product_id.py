@@ -4,6 +4,13 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "data" / "kraft3d.db"
 
+PURCHASE_TRIGGERS = (
+    "trg_purchase_stock_movement_insert",
+    "trg_purchase_stock_movement_delete",
+    "trg_purchase_stock_movement_update_same_item",
+    "trg_purchase_stock_movement_update_different_item",
+)
+
 
 def main():
     if not DB_PATH.exists():
@@ -20,9 +27,11 @@ def main():
         columns = {row[1]: row for row in info}
         if "product_id" not in columns:
             print("Столбец product_id отсутствует. Перестройка таблицы не требуется.")
+            connection.close()
             return
         if not columns["product_id"][3]:
             print("product_id уже допускает NULL. Изменения не требуются.")
+            connection.close()
             return
 
         backup_name = "stock_movements_before_nullable_product_id"
@@ -36,8 +45,13 @@ def main():
                 "Не удаляй её вручную; сначала проверь её содержимое."
             )
 
-        # Сохраняем все текущие столбцы и строки в отдельной резервной таблице.
+        # Backup the existing rows before changing the table.
         connection.execute(f'CREATE TABLE "{backup_name}" AS SELECT * FROM stock_movements')
+
+        # SQLite triggers reference the table by name. Drop only the known purchase
+        # logging triggers during the rebuild; they are restored after the commit.
+        for trigger in PURCHASE_TRIGGERS:
+            connection.execute(f'DROP TRIGGER IF EXISTS "{trigger}"')
 
         definitions = []
         for row in info:
@@ -74,14 +88,27 @@ def main():
             ON stock_movements(item_type, item_id)
         """)
         connection.commit()
-        print("Готово: product_id теперь может быть NULL для движений материалов и комплектующих.")
-        print(f"Резервная копия старых строк создана в таблице {backup_name}.")
-        print("Все исходные строки перенесены; закупки не создавались и остатки не изменялись.")
     except Exception:
         connection.rollback()
         raise
     finally:
         connection.close()
+
+    # Reinstall purchase logging triggers only after the table replacement commits.
+    # Existing trigger definitions are managed by the bridge module.
+    try:
+        from inventory_purchase_bridge import initialize_purchase_stock_triggers
+        initialize_purchase_stock_triggers()
+    except Exception as exc:
+        raise SystemExit(
+            "Таблица исправлена и данные сохранены, но не удалось восстановить "
+            f"триггеры закупок: {exc}. Не повторяй миграцию; сообщи эту ошибку."
+        )
+
+    print("Готово: product_id теперь допускает NULL для движений материалов и комплектующих.")
+    print(f"Резервная копия старых строк создана в таблице {backup_name}.")
+    print("Все исходные строки перенесены; остатки не изменялись.")
+    print("Триггеры журнала закупок восстановлены.")
 
 
 if __name__ == "__main__":
