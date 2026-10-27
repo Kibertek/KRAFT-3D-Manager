@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QTextEdit,
+    QInputDialog,
 )
 
 
@@ -343,10 +344,20 @@ class CalculatorPage(QWidget):
         self.materials = []
         self.components = []
         self.packaging_kits = []
+        self.printers = []
         self.material_rows = []
         self.component_rows = []
+        self.active_printer_id = None
+        self.manual_printer_watts = "150"
+        self.editing_product_id = None
+        self.editing_product_name = ""
 
         self.setup_ui()
+        self.manual_printer_watts = self.printer_watts.text()
+        self.depreciation_per_hour.setToolTip(
+            "Износ за час задаётся вручную. Ресурс до обслуживания в карточке принтера "
+            "не является полным сроком службы для расчёта амортизации."
+        )
         self.load_reference_data()
         self.recalculate()
 
@@ -537,6 +548,10 @@ class CalculatorPage(QWidget):
         production_group = QGroupBox("3. Производственные затраты")
         production_form = QFormLayout(production_group)
 
+        self.printer_combo = QComboBox()
+        self.printer_combo.setMinimumHeight(34)
+        self.printer_combo.addItem("Ручной ввод параметров", None)
+
         self.print_hours = NumberInput("2", decimals=2)
         self.print_hours.setToolTip("Время печати в часах, например 1,5")
 
@@ -546,6 +561,7 @@ class CalculatorPage(QWidget):
         self.labor_cost = NumberInput("0", decimals=2)
         self.other_costs = NumberInput("0", decimals=2)
 
+        production_form.addRow("Принтер из раздела «Оборудование»:", self.printer_combo)
         production_form.addRow("Время печати (ч):", self.print_hours)
         production_form.addRow("Мощность принтера (Вт):", self.printer_watts)
         production_form.addRow(
@@ -642,8 +658,17 @@ class CalculatorPage(QWidget):
         recalculate_button.clicked.connect(self.recalculate)
         buttons_layout.addWidget(recalculate_button)
 
-        add_product_button = QPushButton("Добавить в список товаров")
-        add_product_button.setObjectName("accentButton")
+        load_product_button = QPushButton("Загрузить изделие из каталога")
+        load_product_button.clicked.connect(self.load_product_calculation)
+        buttons_layout.addWidget(load_product_button)
+
+        self.save_existing_button = QPushButton("Сохранить расчёт в изделие")
+        self.save_existing_button.setObjectName("accentButton")
+        self.save_existing_button.setEnabled(False)
+        self.save_existing_button.clicked.connect(self.save_calculation_to_existing_product)
+        buttons_layout.addWidget(self.save_existing_button)
+
+        add_product_button = QPushButton("Добавить новое изделие")
         add_product_button.clicked.connect(self.add_product_to_catalog)
         buttons_layout.addWidget(add_product_button)
 
@@ -654,6 +679,8 @@ class CalculatorPage(QWidget):
         outer_layout.addWidget(scroll, 1)
 
         # Подключаем пересчёт после создания всех полей.
+        self.printer_combo.currentIndexChanged.connect(self.on_printer_changed)
+
         inputs = [
             self.print_hours,
             self.printer_watts,
@@ -731,20 +758,58 @@ class CalculatorPage(QWidget):
                     )
                     return
 
-                component_rows = connection.execute("""
-                    SELECT id, name, price, unit
-                    FROM components
-                    ORDER BY name COLLATE NOCASE
-                """).fetchall()
-
-                kit_rows = []
                 table_names = {
                     row["name"] for row in connection.execute(
                         "SELECT name FROM sqlite_master WHERE type='table'"
                     ).fetchall()
                 }
+
+                # Запчасти, привязанные к принтерам, не должны попадать
+                # в обычные комплектующие калькулятора.
+                if "component_printer_compatibility" in table_names:
+                    component_rows = connection.execute("""
+                        SELECT c.id, c.name, c.price, c.unit
+                        FROM components c
+                        WHERE NOT EXISTS (
+                            SELECT 1
+                            FROM component_printer_compatibility pc
+                            WHERE pc.component_id = c.id
+                        )
+                        ORDER BY c.name COLLATE NOCASE
+                    """).fetchall()
+                else:
+                    component_rows = connection.execute("""
+                        SELECT id, name, price, unit
+                        FROM components
+                        ORDER BY name COLLATE NOCASE
+                    """).fetchall()
+
+                printer_rows = connection.execute("""
+                    SELECT id, name, model, power, purchase_price, resource_hours, status
+                    FROM printers
+                    ORDER BY name COLLATE NOCASE
+                """).fetchall()
+
+                kit_rows = []
                 if {"packaging_kits", "packaging_kit_items", "packaging_labels"}.issubset(table_names):
-                    kit_rows = connection.execute("""
+                    if "component_printer_compatibility" in table_names:
+                        component_join = """
+                        LEFT JOIN components c
+                            ON i.item_type = 'component'
+                           AND i.item_id = c.id
+                           AND NOT EXISTS (
+                               SELECT 1
+                               FROM component_printer_compatibility pc
+                               WHERE pc.component_id = c.id
+                           )
+                        """
+                    else:
+                        component_join = """
+                        LEFT JOIN components c
+                            ON i.item_type = 'component' AND i.item_id = c.id
+                        """
+
+                    kit_query = f"""
                         SELECT k.id, k.name,
                                COALESCE(SUM(
                                    CASE WHEN i.item_type = 'component' THEN COALESCE(c.price, 0)
@@ -753,11 +818,12 @@ class CalculatorPage(QWidget):
                                ), 0) AS total
                         FROM packaging_kits k
                         LEFT JOIN packaging_kit_items i ON i.kit_id = k.id
-                        LEFT JOIN components c ON i.item_type = 'component' AND i.item_id = c.id
+                        {component_join}
                         LEFT JOIN packaging_labels l ON i.item_type = 'label' AND i.item_id = l.id
                         GROUP BY k.id, k.name
                         ORDER BY k.name COLLATE NOCASE
-                    """).fetchall()
+                    """
+                    kit_rows = connection.execute(kit_query).fetchall()
 
             for material in material_rows:
                 weight = float(material["spool_weight"] or 0)
@@ -786,6 +852,41 @@ class CalculatorPage(QWidget):
                 {"id": row["id"], "name": row["name"], "price": float(row["total"] or 0)}
                 for row in kit_rows
             ]
+            selected_printer_data = self.printer_combo.currentData()
+            selected_printer_id = (
+                selected_printer_data.get("id")
+                if isinstance(selected_printer_data, dict)
+                else selected_printer_data
+            )
+            self.printers = [
+                {
+                    "id": int(row["id"]),
+                    "name": row["name"],
+                    "model": row["model"] or "",
+                    "power": float(row["power"] or 0),
+                    "purchase_price": float(row["purchase_price"] or 0),
+                    "resource_hours": float(row["resource_hours"] or 0),
+                    "status": row["status"] or "Работает",
+                }
+                for row in printer_rows
+            ]
+            self.printer_combo.blockSignals(True)
+            self.printer_combo.clear()
+            self.printer_combo.addItem("Ручной ввод параметров", None)
+            for printer in self.printers:
+                model_text = f" | {printer['model']}" if printer["model"] else ""
+                self.printer_combo.addItem(
+                    f"{printer['name']}{model_text} [{printer['status']}]",
+                    printer,
+                )
+            if selected_printer_id is not None:
+                index = next(
+                    (i for i in range(1, self.printer_combo.count())
+                     if self.printer_combo.itemData(i)["id"] == selected_printer_id),
+                    0,
+                )
+                self.printer_combo.setCurrentIndex(index)
+            self.printer_combo.blockSignals(False)
             selected_kit_id = self.packaging_kit_combo.currentData()
             self.packaging_kit_combo.blockSignals(True)
             self.packaging_kit_combo.clear()
@@ -820,6 +921,22 @@ class CalculatorPage(QWidget):
                 "Ошибка базы данных",
                 f"Не удалось загрузить справочники:\n{error}",
             )
+
+    def on_printer_changed(self, *_):
+        selected = self.printer_combo.currentData()
+
+        if selected is None:
+            self.printer_watts.setText(self.manual_printer_watts)
+            self.active_printer_id = None
+            self.recalculate()
+            return
+
+        if self.active_printer_id is None:
+            self.manual_printer_watts = self.printer_watts.text()
+
+        self.active_printer_id = int(selected["id"])
+        self.printer_watts.setText(str(selected["power"]).replace(".", ","))
+        self.recalculate()
 
     def add_material_row(self):
         if len(self.material_rows) >= self.MAX_MATERIALS:
@@ -1052,6 +1169,12 @@ class CalculatorPage(QWidget):
                 "cost": round(packaging_cost, 4),
             },
             "production_parameters": {
+                "printer_id": self.active_printer_id,
+                "printer_name": (
+                    next((printer["name"] for printer in self.printers
+                          if printer["id"] == self.active_printer_id), None)
+                    if self.active_printer_id is not None else None
+                ),
                 "print_hours": hours,
                 "printer_watts": watts,
                 "electricity_tariff": tariff,
@@ -1123,6 +1246,257 @@ class CalculatorPage(QWidget):
             connection.execute(
                 "UPDATE products SET folder_path = ? WHERE id = ?",
                 (relative_path, product_id),
+            )
+
+
+    def load_product_calculation(self):
+        """Загружает сохранённый расчёт изделия из каталога в калькулятор."""
+        try:
+            with get_connection() as connection:
+                products = connection.execute("""
+                    SELECT id, article, name, sale_price, calculation_details
+                    FROM products
+                    ORDER BY name COLLATE NOCASE
+                """).fetchall()
+        except sqlite3.Error as error:
+            QMessageBox.critical(self, "Ошибка базы данных", str(error))
+            return
+
+        if not products:
+            QMessageBox.information(
+                self, "Каталог пуст", "Сначала добавьте изделие в каталог."
+            )
+            return
+
+        labels = [
+            f"{product['article']} | {product['name']}"
+            for product in products
+        ]
+        chosen, accepted = QInputDialog.getItem(
+            self,
+            "Загрузить изделие",
+            "Выберите изделие для редактирования расчёта:",
+            labels,
+            0,
+            False,
+        )
+        if not accepted or not chosen:
+            return
+
+        product = products[labels.index(chosen)]
+        try:
+            details = json.loads(product["calculation_details"] or "{}")
+        except (TypeError, json.JSONDecodeError):
+            details = {}
+
+        self.editing_product_id = int(product["id"])
+        self.editing_product_name = f"{product['article']} | {product['name']}"
+
+        if not details:
+            # Ручная карточка ещё не содержит подробного расчёта.
+            # Сбрасываем поля на безопасные исходные значения, сохраняя цену изделия.
+            details = {
+                "sale_price": float(product["sale_price"] or 265),
+                "materials": [],
+                "components": [],
+                "packaging": {"kit_id": None, "quantity": 1},
+                "production_parameters": {
+                    "printer_id": None,
+                    "printer_watts": 150,
+                    "print_hours": 2,
+                    "electricity_tariff": 7,
+                    "depreciation_per_hour": 10,
+                    "labor_cost": 0,
+                    "other_costs": 0,
+                    "tax_percent": 4,
+                    "commission_percent": 23,
+                    "fbs_percent": 0,
+                },
+            }
+            self.load_calculation_details(details)
+            self.save_existing_button.setEnabled(True)
+            self.save_existing_button.setText(
+                f"Сохранить в изделие: {product['article']}"
+            )
+            QMessageBox.information(
+                self,
+                "Ручное изделие загружено",
+                f"Изделие «{self.editing_product_name}» создано вручную и пока не имеет "
+                "подробного расчёта. В калькулятор загружены начальные параметры. "
+                "Укажи материалы, комплектующие и расходы, затем нажми "
+                "«Сохранить расчёт в изделие». Карточка не будет дублироваться."
+            )
+            return
+
+        self.load_calculation_details(details)
+        self.save_existing_button.setEnabled(True)
+        self.save_existing_button.setText(
+            f"Сохранить в изделие: {product['article']}"
+        )
+        QMessageBox.information(
+            self,
+            "Расчёт загружен",
+            f"Расчёт изделия «{self.editing_product_name}» загружен. "
+            "Измените параметры и нажмите «Сохранить расчёт в изделие». "
+            "Новая карточка создана не будет."
+        )
+
+    def load_calculation_details(self, details):
+        """Восстанавливает поля калькулятора по сохранённому JSON-снимку."""
+        production = details.get("production_parameters") or {}
+        packaging = details.get("packaging") or {}
+
+        # Перестраиваем строки материалов, сохраняя ограничение в четыре строки.
+        saved_materials = details.get("materials") or []
+        target_material_count = max(1, min(self.MAX_MATERIALS, len(saved_materials)))
+        while len(self.material_rows) < target_material_count:
+            self.add_material_row()
+        while len(self.material_rows) > target_material_count:
+            row = self.material_rows[-1]
+            self.remove_material_row(row)
+
+        for index, row in enumerate(self.material_rows):
+            row.material_combo.blockSignals(True)
+            row.material_combo.setCurrentIndex(0)
+            if index < len(saved_materials):
+                saved = saved_materials[index]
+                for combo_index in range(1, row.material_combo.count()):
+                    material = row.material_combo.itemData(combo_index)
+                    if material and material.get("id") == saved.get("material_id"):
+                        row.material_combo.setCurrentIndex(combo_index)
+                        break
+                row.grams_input.setText(
+                    str(saved.get("grams", 0)).replace(".", ",")
+                )
+            else:
+                row.grams_input.setText("0")
+            row.material_combo.blockSignals(False)
+
+        # Восстанавливаем комплектующие.
+        saved_components = details.get("components") or []
+        while len(self.component_rows) > len(saved_components):
+            self.remove_component_row(self.component_rows[-1])
+        while len(self.component_rows) < len(saved_components):
+            if not self.components:
+                break
+            self.add_component_row()
+
+        for index, row in enumerate(self.component_rows):
+            row.component_combo.blockSignals(True)
+            row.component_combo.setCurrentIndex(0)
+            if index < len(saved_components):
+                saved = saved_components[index]
+                for combo_index in range(1, row.component_combo.count()):
+                    component = row.component_combo.itemData(combo_index)
+                    if component and component.get("id") == saved.get("component_id"):
+                        row.component_combo.setCurrentIndex(combo_index)
+                        break
+                row.quantity_input.setText(
+                    str(saved.get("quantity", 1)).replace(".", ",")
+                )
+            row.component_combo.blockSignals(False)
+
+        kit_index = self.packaging_kit_combo.findData(packaging.get("kit_id"))
+        self.packaging_kit_combo.blockSignals(True)
+        self.packaging_kit_combo.setCurrentIndex(kit_index if kit_index >= 0 else 0)
+        self.packaging_kit_combo.blockSignals(False)
+        self.packaging_kit_quantity.setText(
+            str(packaging.get("quantity", 1)).replace(".", ",")
+        )
+
+        # Сначала отключаем сигнал выбора принтера, чтобы не затереть ручную мощность.
+        printer_id = production.get("printer_id")
+        self.printer_combo.blockSignals(True)
+        printer_index = 0
+        if printer_id is not None:
+            for index in range(1, self.printer_combo.count()):
+                printer = self.printer_combo.itemData(index)
+                if printer and printer.get("id") == printer_id:
+                    printer_index = index
+                    break
+        self.printer_combo.setCurrentIndex(printer_index)
+        self.printer_combo.blockSignals(False)
+
+        selected_printer = self.printer_combo.currentData()
+        self.active_printer_id = selected_printer["id"] if selected_printer else None
+        self.manual_printer_watts = str(
+            production.get("printer_watts", 150)
+        ).replace(".", ",")
+        self.printer_watts.setText(self.manual_printer_watts)
+        self.print_hours.setText(str(production.get("print_hours", 2)).replace(".", ","))
+        self.electricity_tariff.setText(
+            str(production.get("electricity_tariff", 7)).replace(".", ",")
+        )
+        self.depreciation_per_hour.setText(
+            str(production.get("depreciation_per_hour", 10)).replace(".", ",")
+        )
+        self.labor_cost.setText(str(production.get("labor_cost", 0)).replace(".", ","))
+        self.other_costs.setText(str(production.get("other_costs", 0)).replace(".", ","))
+        self.sale_price.setText(str(details.get("sale_price", 265)).replace(".", ","))
+        self.tax_percent.setText(str(production.get("tax_percent", 4)).replace(".", ","))
+        self.commission_percent.setText(
+            str(production.get("commission_percent", 23)).replace(".", ",")
+        )
+        self.fbs_percent.setText(str(production.get("fbs_percent", 0)).replace(".", ","))
+
+        # Для выбранного принтера его мощность берётся из карточки оборудования.
+        if selected_printer:
+            self.printer_watts.setText(
+                str(selected_printer.get("power", 0)).replace(".", ",")
+            )
+
+        self.recalculate()
+
+    def save_calculation_to_existing_product(self):
+        """Обновляет только расчётные поля существующей карточки изделия."""
+        if self.editing_product_id is None:
+            QMessageBox.information(
+                self, "Изделие не выбрано",
+                "Сначала нажмите «Загрузить изделие из каталога»."
+            )
+            return
+
+        calculation = getattr(self, "current_calculation", {})
+        try:
+            with get_connection() as connection:
+                cursor = connection.execute("""
+                    UPDATE products
+                    SET sale_price = ?, material_cost = ?, components_cost = ?,
+                        production_cost = ?, marketplace_cost = ?, total_cost = ?,
+                        profit = ?, margin = ?, markup = ?, calculation_details = ?
+                    WHERE id = ?
+                """, (
+                    calculation.get("sale_price", 0),
+                    calculation.get("material_cost", 0),
+                    calculation.get("components_cost", 0),
+                    calculation.get("production_cost", 0),
+                    calculation.get("marketplace_cost", 0),
+                    calculation.get("total_cost", 0),
+                    calculation.get("profit", 0),
+                    calculation.get("margin", 0),
+                    calculation.get("markup", 0),
+                    json.dumps(calculation, ensure_ascii=False),
+                    self.editing_product_id,
+                ))
+                if cursor.rowcount == 0:
+                    QMessageBox.warning(
+                        self, "Изделие не найдено",
+                        "Карточка изделия больше не существует в каталоге."
+                    )
+                    self.editing_product_id = None
+                    self.save_existing_button.setEnabled(False)
+                    return
+
+            QMessageBox.information(
+                self,
+                "Расчёт сохранён",
+                f"Расчёт изделия «{self.editing_product_name}» обновлён. "
+                "Название, артикул, файлы, заказы и исторические цены заказов не изменялись."
+            )
+        except sqlite3.Error as error:
+            QMessageBox.critical(
+                self, "Ошибка сохранения",
+                f"Не удалось обновить расчёт изделия:\n{error}"
             )
 
     def add_product_to_catalog(self):

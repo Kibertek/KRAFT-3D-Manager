@@ -265,16 +265,56 @@ class KitDialog(QDialog):
             self.description.setText(self.kit["description"] or "")
             with get_connection() as con:
                 existing = con.execute("SELECT * FROM packaging_kit_items WHERE kit_id = ? ORDER BY id", (self.kit["id"],)).fetchall()
+            catalog_ids = {
+                kind: {entry["id"] for entry in entries}
+                for kind, entries in self._catalog.items()
+            }
+            removed_printer_parts = 0
             for item in existing:
-                self._items.append({"item_type": item["item_type"], "item_id": item["item_id"], "quantity": float(item["quantity"])})
+                item_type = item["item_type"]
+                item_id = item["item_id"]
+                if item_id not in catalog_ids.get(item_type, set()):
+                    if item_type == "component":
+                        removed_printer_parts += 1
+                    continue
+                self._items.append({"item_type": item_type, "item_id": item_id, "quantity": float(item["quantity"])})
             self.render_items()
+            if removed_printer_parts:
+                QMessageBox.information(
+                    self,
+                    "Состав набора обновлён",
+                    f"Из состава исключено запчастей принтера: {removed_printer_parts}. "
+                    "Они не относятся к упаковке."
+                )
 
     def load_catalog(self):
         with get_connection() as con:
-            self._catalog["component"] = [dict(r) for r in con.execute("""
-                SELECT id, name, unit, price FROM components
-                WHERE COALESCE(category, '') = 'Упаковка' ORDER BY name
-            """).fetchall()]
+            table_names = {
+                row["name"] for row in con.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            }
+            if "component_printer_compatibility" in table_names:
+                component_query = """
+                    SELECT c.id, c.name, c.unit, c.price
+                    FROM components c
+                    WHERE COALESCE(c.category, '') = 'Упаковка'
+                      AND NOT EXISTS (
+                          SELECT 1
+                          FROM component_printer_compatibility pc
+                          WHERE pc.component_id = c.id
+                      )
+                    ORDER BY c.name
+                """
+            else:
+                component_query = """
+                    SELECT id, name, unit, price FROM components
+                    WHERE COALESCE(category, '') = 'Упаковка'
+                    ORDER BY name
+                """
+            self._catalog["component"] = [
+                dict(r) for r in con.execute(component_query).fetchall()
+            ]
             self._catalog["label"] = [dict(r) for r in con.execute(
                 "SELECT id, name, 'шт.' AS unit, price FROM packaging_labels ORDER BY name"
             ).fetchall()]

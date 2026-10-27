@@ -3,6 +3,7 @@ import sys
 import re
 import shutil
 import sqlite3
+import json
 from pathlib import Path
 
 from calculator_module import CalculatorPage
@@ -15,9 +16,13 @@ from orders_module import OrdersPage
 from finance_module import FinancePage
 from reports_module import ReportsPage
 from marketplace_module import MarketplacePage
-from ozon_finance_module import OzonFinancePage
+from equipment_module import EquipmentPage
+from production_module import ProductionPage
+from inventory_module import InventoryPage, initialize_inventory_tables
+from inventory_purchase_bridge import initialize_purchase_stock_triggers
+from database import get_connection as shared_get_connection, initialize_database as initialize_shared_database
 
-from PySide6.QtCore import Qt, QUrl
+from PySide6.QtCore import Qt, QUrl, QTimer
 from PySide6.QtGui import QFont, QDesktopServices
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QFrame, QLabel,
@@ -25,7 +30,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QTextEdit, QComboBox, QDialog,
     QDialogButtonBox, QFormLayout, QTableWidget,
     QTableWidgetItem, QHeaderView, QMessageBox,
-    QAbstractItemView, QFileDialog, QDoubleSpinBox
+    QAbstractItemView, QFileDialog, QDoubleSpinBox, QScrollArea
 )
 
 
@@ -47,10 +52,7 @@ def create_directories():
 
 
 def get_connection():
-    connection = sqlite3.connect(DATABASE_FILE)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA foreign_keys = ON")
-    return connection
+    return shared_get_connection()
 
 
 def initialize_database():
@@ -675,6 +677,130 @@ class ProductFilesDialog(QDialog):
 
 
 # ============================================================
+# ПРОСМОТР СОХРАНЁННОГО РАСЧЁТА СЕБЕСТОИМОСТИ
+# ============================================================
+
+class ProductCalculationDialog(QDialog):
+    """Показывает сохранённый в каталоге снимок расчёта изделия."""
+
+    def __init__(self, parent, product):
+        super().__init__(parent)
+        self.setWindowTitle(
+            f"Расчёт себестоимости: {product['article']} | {product['name']}"
+        )
+        self.resize(720, 650)
+        self.setMinimumSize(560, 450)
+
+        layout = QVBoxLayout(self)
+        heading = QLabel(
+            f"{product['article']} | {product['name']}"
+        )
+        heading.setObjectName("pageTitle")
+        layout.addWidget(heading)
+
+        raw_details = product["calculation_details"] or ""
+        try:
+            details = json.loads(raw_details) if raw_details.strip() else {}
+        except (TypeError, json.JSONDecodeError):
+            details = {}
+
+        self.details_view = QTextEdit()
+        self.details_view.setReadOnly(True)
+        self.details_view.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+
+        if not details:
+            self.details_view.setPlainText(
+                "Для этого изделия сохранённый подробный расчёт отсутствует.\n\n"
+                "Это может быть изделие, добавленное вручную в каталог, "
+                "или товар, созданный до сохранения подробных расчётов."
+            )
+        else:
+            lines = []
+            money_value = lambda value: (
+                f"{float(value or 0):,.2f} ₽".replace(",", " ").replace(".", ",")
+            )
+            number_value = lambda value: (
+                f"{float(value or 0):,.3f}".replace(",", " ").replace(".", ",")
+            )
+
+            lines.append("ИТОГИ РАСЧЁТА")
+            lines.append("=" * 42)
+            lines.append(f"Цена продажи: {money_value(details.get('sale_price'))}")
+            lines.append(f"Материалы: {money_value(details.get('material_cost'))}")
+            lines.append(f"Комплектующие и упаковка: {money_value(details.get('components_cost'))}")
+            lines.append(f"Производство: {money_value(details.get('production_cost'))}")
+            lines.append(f"Налог и расходы на продажу: {money_value(details.get('marketplace_cost'))}")
+            lines.append(f"Полная себестоимость: {money_value(details.get('total_cost'))}")
+            lines.append(f"Прибыль: {money_value(details.get('profit'))}")
+            lines.append(f"Рентабельность продаж: {number_value(details.get('margin'))} %")
+            lines.append(f"Наценка к прямым затратам: {number_value(details.get('markup'))} %")
+
+            lines.append("\nМАТЕРИАЛЫ")
+            lines.append("=" * 42)
+            materials = details.get("materials") or []
+            if materials:
+                for material in materials:
+                    lines.append(
+                        f"• {material.get('name', 'Материал')}: "
+                        f"{number_value(material.get('grams'))} г × "
+                        f"{money_value(material.get('price_per_gram'))}/г = "
+                        f"{money_value(material.get('cost'))}"
+                    )
+            else:
+                lines.append("Материалы не указаны.")
+
+            lines.append("\nКОМПЛЕКТУЮЩИЕ")
+            lines.append("=" * 42)
+            components = details.get("components") or []
+            if components:
+                for component in components:
+                    lines.append(
+                        f"• {component.get('name', 'Комплектующее')}: "
+                        f"{number_value(component.get('quantity'))} "
+                        f"{component.get('unit') or 'шт.'} × "
+                        f"{money_value(component.get('unit_price'))} = "
+                        f"{money_value(component.get('cost'))}"
+                    )
+            else:
+                lines.append("Комплектующие не указаны.")
+
+            packaging = details.get("packaging") or {}
+            lines.append("\nУПАКОВКА")
+            lines.append("=" * 42)
+            if packaging.get("kit_name"):
+                lines.append(
+                    f"{packaging['kit_name']}: "
+                    f"{number_value(packaging.get('quantity'))} наб. = "
+                    f"{money_value(packaging.get('cost'))}"
+                )
+            else:
+                lines.append("Отдельный набор упаковки не выбран.")
+
+            production = details.get("production_parameters") or {}
+            lines.append("\nПАРАМЕТРЫ ПРОИЗВОДСТВА И ПРОДАЖИ")
+            lines.append("=" * 42)
+            lines.append(f"Принтер: {production.get('printer_name') or 'Ручной ввод параметров'}")
+            lines.append(f"Время печати: {number_value(production.get('print_hours'))} ч")
+            lines.append(f"Мощность: {number_value(production.get('printer_watts'))} Вт")
+            lines.append(f"Тариф электричества: {money_value(production.get('electricity_tariff'))}/кВт·ч")
+            lines.append(f"Стоимость электричества: {money_value(production.get('electricity_cost'))}")
+            lines.append(f"Износ принтера: {money_value(production.get('depreciation_per_hour'))}/ч")
+            lines.append(f"Расчётный износ: {money_value(production.get('depreciation_cost'))}")
+            lines.append(f"Работа: {money_value(production.get('labor_cost'))}")
+            lines.append(f"Прочие расходы: {money_value(production.get('other_costs'))}")
+            lines.append(f"Налог: {number_value(production.get('tax_percent'))} %")
+            lines.append(f"Комиссия маркетплейса: {number_value(production.get('commission_percent'))} %")
+            lines.append(f"FBS и продвижение: {number_value(production.get('fbs_percent'))} %")
+
+            self.details_view.setPlainText("\n".join(lines))
+
+        layout.addWidget(self.details_view, 1)
+        close_button = QPushButton("Закрыть")
+        close_button.clicked.connect(self.accept)
+        layout.addWidget(close_button)
+
+
+# ============================================================
 # КАТАЛОГ ИЗДЕЛИЙ
 # ============================================================
 
@@ -761,6 +887,10 @@ class ProductsPage(QWidget):
         edit_button = QPushButton("Редактировать")
         edit_button.clicked.connect(self.edit_product)
         bottom.addWidget(edit_button)
+
+        calculation_button = QPushButton("Расчёт себестоимости")
+        calculation_button.clicked.connect(self.show_calculation)
+        bottom.addWidget(calculation_button)
 
         files_button = QPushButton("Файлы и фото")
         files_button.setObjectName("accentButton")
@@ -940,6 +1070,30 @@ class ProductsPage(QWidget):
         except Exception as error:
             QMessageBox.critical(self, "Ошибка", str(error))
 
+    def show_calculation(self):
+        product_id = self.selected_product_id()
+
+        if product_id is None:
+            QMessageBox.information(
+                self,
+                "Изделие не выбрано",
+                "Выбери изделие в таблице."
+            )
+            return
+
+        with get_connection() as connection:
+            product = connection.execute(
+                "SELECT id, article, name, calculation_details FROM products WHERE id = ?",
+                (product_id,)
+            ).fetchone()
+
+        if product is None:
+            self.load_products()
+            return
+
+        dialog = ProductCalculationDialog(self, product)
+        dialog.exec()
+
     def manage_files(self):
         product_id = self.selected_product_id()
 
@@ -1046,7 +1200,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("KRAFT 3D Manager")
-        self.setMinimumSize(1100, 700)
+        self.setMinimumSize(1000, 650)
         self.create_interface()
 
     def create_interface(self):
@@ -1059,29 +1213,73 @@ class MainWindow(QMainWindow):
 
         sidebar = QFrame()
         sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(235)
+        sidebar.setFixedWidth(245)
 
-        sidebar_layout = QVBoxLayout(sidebar)
-        sidebar_layout.setContentsMargins(15, 22, 15, 18)
-        sidebar_layout.setSpacing(6)
+        sidebar_outer_layout = QVBoxLayout(sidebar)
+        sidebar_outer_layout.setContentsMargins(10, 16, 10, 12)
+        sidebar_outer_layout.setSpacing(8)
 
         logo = QLabel("KRAFT 3D")
         logo.setObjectName("logo")
-
         logo_subtitle = QLabel("MANAGER")
         logo_subtitle.setObjectName("logoSubtitle")
+        sidebar_outer_layout.addWidget(logo)
+        sidebar_outer_layout.addWidget(logo_subtitle)
+        sidebar_outer_layout.addSpacing(8)
 
-        sidebar_layout.addWidget(logo)
-        sidebar_layout.addWidget(logo_subtitle)
-        sidebar_layout.addSpacing(25)
+        # Прокрутка позволяет меню оставаться читаемым даже при небольшом окне.
+        sidebar_scroll = QScrollArea()
+        sidebar_scroll.setObjectName("sidebarScroll")
+        sidebar_scroll.setWidgetResizable(True)
+        sidebar_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        sidebar_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+
+        menu_content = QWidget()
+        menu_content.setObjectName("sidebarMenuContent")
+        self.sidebar_layout = QVBoxLayout(menu_content)
+        self.sidebar_layout.setContentsMargins(0, 0, 2, 0)
+        self.sidebar_layout.setSpacing(4)
+
+        sidebar_scroll.setWidget(menu_content)
+        sidebar_outer_layout.addWidget(sidebar_scroll, 1)
+
+        version = QLabel("KRAFT 3D Manager\nv0.6.0")
+        version.setObjectName("version")
+        sidebar_outer_layout.addWidget(version)
+
+        # Рабочая область: кнопка позволяет открыть текущий раздел отдельно.
+        workspace = QWidget()
+        workspace_layout = QVBoxLayout(workspace)
+        workspace_layout.setContentsMargins(16, 12, 16, 12)
+        workspace_layout.setSpacing(8)
+
+        workspace_header = QHBoxLayout()
+        workspace_header.addStretch(1)
+        self.open_window_button = QPushButton("↗ Открыть в отдельном окне")
+        self.open_window_button.setObjectName("secondaryButton")
+        self.open_window_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.open_window_button.clicked.connect(self.open_current_page_window)
+        workspace_header.addWidget(self.open_window_button)
+        workspace_layout.addLayout(workspace_header)
 
         self.pages = QStackedWidget()
+        workspace_layout.addWidget(self.pages, 1)
+        self.page_indexes = {}
+        self.page_names_by_index = {}
+        self.page_factories = {}
+        self.module_windows = []
+        self.menu_buttons = []
+        self.category_buttons = {}
+        self.submenu_widgets = {}
 
         definitions = [
             ("Главная", PlaceholderPage(
                 "Главная", "Рабочая панель KRAFT 3D Manager."
             )),
             ("Изделия", ProductsPage()),
+            ("Производство", ProductionPage()),
             ("Заказчики", CustomersPage()),
             ("Заказы", OrdersPage()),
             ("Финансы", FinancePage()),
@@ -1089,53 +1287,192 @@ class MainWindow(QMainWindow):
             ("Комплектующие", ComponentsPage()),
             ("Упаковка", PackagingPage()),
             ("Закупки", PurchasesPage()),
-            ("Принтеры", PlaceholderPage(
-                "Принтеры",
-                "Оборудование, мощность, стоимость и ресурс."
-            )),
+            ("Склад", InventoryPage()),
+            ("Принтеры", EquipmentPage()),
             ("Калькулятор", CalculatorPage()),
             ("Отчёты", ReportsPage()),
             ("Маркетплейсы", MarketplacePage()),
-            ("Финансы Ozon", OzonFinancePage()),
             ("Настройки", PlaceholderPage(
                 "Настройки",
                 "Параметры программы и резервное копирование."
             )),
         ]
 
-        self.menu_buttons = []
-
-        for _, page in definitions:
+        for index, (name, page) in enumerate(definitions):
             self.pages.addWidget(page)
+            self.page_indexes[name] = index
+            self.page_names_by_index[index] = name
 
-        for index, (name, _) in enumerate(definitions):
-            button = QPushButton(name)
-            button.setObjectName("menuButton")
-            button.setCursor(Qt.CursorShape.PointingHandCursor)
-            button.clicked.connect(
-                lambda checked=False, i=index: self.change_page(i)
-            )
-            sidebar_layout.addWidget(button)
-            self.menu_buttons.append(button)
+        # Фабрики создают независимые экземпляры разделов для отдельных окон.
+        # Все экземпляры используют общую базу данных через database.py.
+        self.page_factories = {
+            "Главная": lambda: PlaceholderPage(
+                "Главная", "Рабочая панель KRAFT 3D Manager."
+            ),
+            "Изделия": ProductsPage,
+            "Производство": ProductionPage,
+            "Заказчики": CustomersPage,
+            "Заказы": OrdersPage,
+            "Финансы": FinancePage,
+            "Материалы": MaterialsPage,
+            "Комплектующие": ComponentsPage,
+            "Упаковка": PackagingPage,
+            "Закупки": PurchasesPage,
+            "Склад": InventoryPage,
+            "Принтеры": EquipmentPage,
+            "Калькулятор": CalculatorPage,
+            "Отчёты": ReportsPage,
+            "Маркетплейсы": MarketplacePage,
+            "Настройки": lambda: PlaceholderPage(
+                "Настройки",
+                "Параметры программы и резервное копирование."
+            ),
+        }
 
-        sidebar_layout.addStretch()
+        # Главная остаётся быстрым переходом, а рабочие разделы сгруппированы.
+        home_button = QPushButton("Главная")
+        home_button.setObjectName("menuButton")
+        home_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        home_button.setMinimumHeight(38)
+        home_button.clicked.connect(
+            lambda checked=False: self.change_page(self.page_indexes["Главная"])
+        )
+        self.sidebar_layout.addWidget(home_button)
+        self.menu_buttons.append(home_button)
 
-        version = QLabel("KRAFT 3D Manager\nv0.6.0")
-        version.setObjectName("version")
-        sidebar_layout.addWidget(version)
+        groups = [
+            ("Финансы", ["Финансы"]),
+            ("Склад", ["Склад", "Изделия", "Производство", "Материалы", "Комплектующие", "Упаковка", "Закупки"]),
+            ("Заказы", ["Заказчики", "Заказы"]),
+            ("Маркетплейсы", ["Маркетплейсы"]),
+            ("Оборудование", ["Принтеры"]),
+            ("Калькулятор", ["Калькулятор"]),
+            ("Отчёты", ["Отчёты"]),
+            ("Настройки", ["Настройки"]),
+        ]
 
+        for category, page_names in groups:
+            category_button = QPushButton(category)
+            category_button.setObjectName("categoryButton")
+            category_button.setCursor(Qt.CursorShape.PointingHandCursor)
+            category_button.setMinimumHeight(40)
+            self.sidebar_layout.addWidget(category_button)
+            self.category_buttons[category] = category_button
+            self.menu_buttons.append(category_button)
+
+            submenu = QWidget()
+            submenu.setObjectName("submenuContainer")
+            submenu_layout = QVBoxLayout(submenu)
+            submenu_layout.setContentsMargins(8, 0, 0, 4)
+            submenu_layout.setSpacing(2)
+
+            if len(page_names) == 1:
+                # Одностраничные категории открываются сразу.
+                page_name = page_names[0]
+                category_button.clicked.connect(
+                    lambda checked=False, name=page_name:
+                    self.change_page(self.page_indexes[name])
+                )
+                submenu.hide()
+            else:
+                submenu.hide()
+                category_button.clicked.connect(
+                    lambda checked=False, name=category:
+                    self.toggle_submenu(name)
+                )
+
+                for page_name in page_names:
+                    sub_button = QPushButton(page_name)
+                    sub_button.setObjectName("submenuButton")
+                    sub_button.setCursor(Qt.CursorShape.PointingHandCursor)
+                    sub_button.setMinimumHeight(34)
+                    sub_button.setToolTip(page_name)
+                    sub_button.clicked.connect(
+                        lambda checked=False, name=page_name:
+                        self.change_page(self.page_indexes[name])
+                    )
+                    submenu_layout.addWidget(sub_button)
+                    self.menu_buttons.append(sub_button)
+
+            self.sidebar_layout.addWidget(submenu)
+            self.submenu_widgets[category] = submenu
+
+        self.sidebar_layout.addStretch(1)
         main_layout.addWidget(sidebar)
-        main_layout.addWidget(self.pages)
+        main_layout.addWidget(workspace, 1)
 
-        self.change_page(0)
+        self.change_page(self.page_indexes["Главная"])
+        self._start_database_change_monitor()
 
-    # ИСПРАВЛЕНИЕ: метод теперь находится внутри MainWindow.
-    def change_page(self, index):
-        self.pages.setCurrentIndex(index)
+    def _start_database_change_monitor(self):
+        """Следит за изменениями в общей SQLite-базе из других окон."""
+        self._database_monitor_connection = get_connection()
+        self._last_database_version = self._read_database_version()
+        self._database_monitor_timer = QTimer(self)
+        self._database_monitor_timer.setInterval(2500)
+        self._database_monitor_timer.timeout.connect(
+            self._check_database_changes
+        )
+        self._database_monitor_timer.start()
 
-        page = self.pages.widget(index)
+    def _read_database_version(self):
+        row = self._database_monitor_connection.execute(
+            "PRAGMA data_version"
+        ).fetchone()
+        return int(row[0])
 
-        # Обновляем справочники при переходе на соответствующие страницы.
+    def _check_database_changes(self):
+        """Обновляет видимые разделы, если другая вкладка/окно сохранила данные."""
+        try:
+            current_version = self._read_database_version()
+            if current_version == self._last_database_version:
+                return
+
+            self._last_database_version = current_version
+
+            # Обновляем активный раздел основного окна.
+            current_page = self.pages.currentWidget()
+            if current_page is not None and current_page.isVisible():
+                self.refresh_page(current_page)
+
+            # Обновляем только открытые окна, чтобы не тратить время на скрытые.
+            for window in list(self.module_windows):
+                if not window.isVisible():
+                    continue
+                page = window.centralWidget()
+                if page is not None:
+                    self.refresh_page(page)
+
+        except (sqlite3.Error, RuntimeError) as error:
+            # Ошибка мониторинга не должна закрывать приложение.
+            print(f"Не удалось проверить изменения базы данных: {error}")
+
+    def closeEvent(self, event):
+        timer = getattr(self, "_database_monitor_timer", None)
+        if timer is not None:
+            timer.stop()
+
+        connection = getattr(self, "_database_monitor_connection", None)
+        if connection is not None:
+            connection.close()
+
+        super().closeEvent(event)
+
+    def toggle_submenu(self, category):
+        submenu = self.submenu_widgets.get(category)
+        if submenu is None:
+            return
+
+        should_show = not submenu.isVisible()
+        submenu.setVisible(should_show)
+
+        button = self.category_buttons[category]
+        button.setProperty("expanded", should_show)
+        button.style().unpolish(button)
+        button.style().polish(button)
+
+    def refresh_page(self, page):
+        """Обновляет данные страницы перед показом."""
         if isinstance(page, ProductsPage):
             page.load_products()
         elif isinstance(page, CustomersPage):
@@ -1148,10 +1485,10 @@ class MainWindow(QMainWindow):
             page.load_report()
         elif isinstance(page, MarketplacePage):
             page.load_data()
-        elif isinstance(page, OzonFinancePage):
+        elif isinstance(page, EquipmentPage):
             page.load_data()
-        elif isinstance(page, MarketplacePage):
-            page.load_data()
+        elif isinstance(page, InventoryPage):
+            page.load_stock()
         elif isinstance(page, PackagingPage):
             page.load_stock()
             page.load_labels()
@@ -1159,6 +1496,60 @@ class MainWindow(QMainWindow):
         elif isinstance(page, CalculatorPage):
             page.load_reference_data()
             page.recalculate()
+
+    def change_page(self, index):
+        self.pages.setCurrentIndex(index)
+        page = self.pages.widget(index)
+        self.open_window_button.setEnabled(
+            self.page_names_by_index.get(index) in self.page_factories
+        )
+        self.refresh_page(page)
+
+    def open_current_page_window(self):
+        index = self.pages.currentIndex()
+        page_name = self.page_names_by_index.get(index)
+        if not page_name:
+            return
+        self.open_page_window(page_name)
+
+    def open_page_window(self, page_name):
+        factory = self.page_factories.get(page_name)
+        if factory is None:
+            QMessageBox.information(
+                self, "Раздел недоступен",
+                "Для этого раздела пока нельзя открыть отдельное окно."
+            )
+            return
+
+        try:
+            page = factory()
+            window = QMainWindow(self)
+            # У окна есть родитель для управления временем жизни, но оно остаётся
+            # самостоятельным верхнеуровневым окном, а не дочерним виджетом.
+            window.setWindowFlag(Qt.WindowType.Window, True)
+            window.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+            window.setWindowTitle(f"{page_name} | KRAFT 3D Manager")
+            window.resize(1100, 720)
+            window.setCentralWidget(page)
+            self.refresh_page(page)
+
+            self.module_windows.append(window)
+            window.destroyed.connect(
+                lambda _=None, target=window:
+                self._forget_module_window(target)
+            )
+            window.show()
+            window.raise_()
+            window.activateWindow()
+        except Exception as error:
+            QMessageBox.critical(
+                self, "Не удалось открыть раздел",
+                f"Раздел «{page_name}» не удалось открыть в отдельном окне.\n\n{error}"
+            )
+
+    def _forget_module_window(self, window):
+        if window in self.module_windows:
+            self.module_windows.remove(window)
 
 
 # ============================================================
@@ -1174,6 +1565,40 @@ QWidget {
     color: #eeeeee;
     font-family: "Segoe UI";
     font-size: 14px;
+}
+
+QStackedWidget,
+QTabWidget,
+QTabWidget::pane,
+QTabWidget QWidget {
+    background-color: #181818;
+}
+
+QTabWidget::pane {
+    border: 1px solid #303030;
+    border-radius: 6px;
+    top: -1px;
+}
+
+QTabBar::tab {
+    background-color: #292929;
+    color: #bdbdbd;
+    border: 1px solid #353535;
+    padding: 10px 16px;
+    margin-right: 3px;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+}
+
+QTabBar::tab:selected {
+    background-color: #38302a;
+    color: #ff9a3d;
+    border-color: #75421e;
+}
+
+QTabBar::tab:hover:!selected {
+    background-color: #353535;
+    color: #ffffff;
 }
 
 QDialog {
@@ -1206,6 +1631,78 @@ QMessageBox QLabel {
     color: #ff7a00;
     font-size: 12px;
     font-weight: 700;
+}
+
+#sidebarScroll {
+    background-color: #202020;
+    border: none;
+}
+
+#sidebarScroll QWidget,
+#sidebarMenuContent,
+#submenuContainer {
+    background-color: #202020;
+}
+
+#sidebarScroll QScrollBar:vertical {
+    background-color: #202020;
+    width: 8px;
+    margin: 0;
+}
+
+#sidebarScroll QScrollBar::handle:vertical {
+    background-color: #505050;
+    border-radius: 4px;
+    min-height: 24px;
+}
+
+#sidebarScroll QScrollBar::add-line:vertical,
+#sidebarScroll QScrollBar::sub-line:vertical {
+    height: 0;
+}
+
+#categoryButton {
+    background-color: #292929;
+    color: #eeeeee;
+    border: 1px solid #353535;
+    border-radius: 7px;
+    padding: 9px 10px;
+    text-align: left;
+    font-weight: 600;
+}
+
+#categoryButton:hover, #categoryButton[expanded="true"] {
+    background-color: #38302a;
+    color: #ff9a3d;
+    border-color: #75421e;
+}
+
+#submenuButton {
+    background-color: transparent;
+    color: #bdbdbd;
+    border: none;
+    border-radius: 6px;
+    padding: 7px 10px;
+    text-align: left;
+}
+
+#submenuButton:hover {
+    background-color: #303030;
+    color: #ffffff;
+}
+
+#secondaryButton {
+    background-color: #292929;
+    color: #eeeeee;
+    border: 1px solid #454545;
+    border-radius: 6px;
+    padding: 7px 12px;
+}
+
+#secondaryButton:hover {
+    background-color: #38302a;
+    color: #ff9a3d;
+    border-color: #75421e;
 }
 
 #menuButton {
@@ -1442,6 +1939,20 @@ QHeaderView::section {
     font-weight: 600;
 }
 
+/* Qt отдельно рисует левый угол таблицы и вертикальный заголовок. */
+QTableCornerButton::section {
+    background-color: #303030;
+    border: 1px solid #383838;
+}
+
+QHeaderView::section:vertical {
+    background-color: #303030;
+    color: #eeeeee;
+    border: none;
+    border-right: 1px solid #383838;
+    border-bottom: 1px solid #383838;
+}
+
 QLabel {
     color: #dddddd;
     background-color: transparent;
@@ -1472,7 +1983,10 @@ QToolTip {
 
 def main():
     create_directories()
+    initialize_shared_database()
     initialize_database()
+    initialize_inventory_tables()
+    initialize_purchase_stock_triggers()
 
     app = QApplication(sys.argv)
     app.setApplicationName("KRAFT 3D Manager")

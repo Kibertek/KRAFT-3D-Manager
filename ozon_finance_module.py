@@ -1,8 +1,10 @@
 import hashlib
+import json
 import sqlite3
 from pathlib import Path
 
 from PySide6.QtCore import Qt
+from database import get_connection as shared_get_connection
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
@@ -14,11 +16,7 @@ DB_PATH = BASE_DIR / "data" / "kraft3d.db"
 
 
 def get_connection():
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(DB_PATH)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA foreign_keys = ON")
-    return connection
+    return shared_get_connection()
 
 
 def money(value):
@@ -82,6 +80,7 @@ def init_ozon_finance_tables():
                 localization_index_percent REAL DEFAULT 0,
                 delivery_time_hours REAL DEFAULT 0,
                 amount_total REAL DEFAULT 0,
+                row_hash TEXT DEFAULT '',
                 product_id INTEGER,
                 raw_data TEXT DEFAULT '',
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -89,6 +88,48 @@ def init_ozon_finance_tables():
                 FOREIGN KEY(import_id) REFERENCES marketplace_imports(id) ON DELETE SET NULL,
                 FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE SET NULL
             )
+        """)
+        columns = {
+            row["name"] for row in connection.execute(
+                "PRAGMA table_info(marketplace_accruals)"
+            ).fetchall()
+        }
+        if "row_hash" not in columns:
+            connection.execute(
+                "ALTER TABLE marketplace_accruals ADD COLUMN row_hash TEXT DEFAULT ''"
+            )
+
+        existing_rows = connection.execute("""
+            SELECT id, accrual_id, accrual_date, service_group, accrual_type,
+                   article, sku, product_name, quantity, seller_price, service_date,
+                   sales_platform, work_scheme, commission_percent,
+                   localization_index_percent, delivery_time_hours, amount_total,
+                   row_hash
+            FROM marketplace_accruals
+            ORDER BY id
+        """).fetchall()
+        occurrences = {}
+        for row in existing_rows:
+            payload = {key: row[key] for key in (
+                "accrual_id", "accrual_date", "service_group", "accrual_type",
+                "article", "sku", "product_name", "quantity", "seller_price",
+                "service_date", "sales_platform", "work_scheme",
+                "commission_percent", "localization_index_percent",
+                "delivery_time_hours", "amount_total"
+            )}
+            base_hash = _row_fingerprint(payload)
+            occurrence = occurrences.get(base_hash, 0)
+            occurrences[base_hash] = occurrence + 1
+            fingerprint = _row_fingerprint(payload, occurrence)
+            if row["row_hash"] != fingerprint:
+                connection.execute(
+                    "UPDATE marketplace_accruals SET row_hash = ? WHERE id = ?",
+                    (fingerprint, row["id"])
+                )
+
+        connection.execute("""
+            CREATE INDEX IF NOT EXISTS idx_marketplace_accruals_row_hash
+            ON marketplace_accruals(row_hash)
         """)
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_marketplace_accruals_article
@@ -182,6 +223,22 @@ def parse_ozon_financial_report(path):
     return data
 
 
+def _row_fingerprint(row, occurrence=0):
+    fields = (
+        "accrual_id", "accrual_date", "service_group", "accrual_type",
+        "article", "sku", "product_name", "quantity", "seller_price",
+        "service_date", "sales_platform", "work_scheme",
+        "commission_percent", "localization_index_percent",
+        "delivery_time_hours", "amount_total"
+    )
+    payload = [row.get(field, "") for field in fields]
+    payload.append(int(occurrence))
+    return hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, default=str,
+                   separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
 def import_ozon_financial_report(path):
     rows = parse_ozon_financial_report(path)
     digest = file_hash(path)
@@ -207,7 +264,21 @@ def import_ozon_financial_report(path):
         import_id = cursor.lastrowid
 
         added = 0
+        duplicates = 0
+        occurrences = {}
         for row in rows:
+            base_hash = _row_fingerprint(row)
+            occurrence = occurrences.get(base_hash, 0)
+            occurrences[base_hash] = occurrence + 1
+            row_hash = _row_fingerprint(row, occurrence)
+            duplicate = connection.execute(
+                "SELECT id FROM marketplace_accruals WHERE row_hash = ? LIMIT 1",
+                (row_hash,)
+            ).fetchone()
+            if duplicate:
+                duplicates += 1
+                continue
+
             product = None
             if row["article"]:
                 product = connection.execute(
@@ -223,9 +294,9 @@ def import_ozon_financial_report(path):
                     quantity, seller_price, service_date, sales_platform,
                     work_scheme, commission_percent,
                     localization_index_percent, delivery_time_hours,
-                    amount_total, product_id, raw_data
+                    amount_total, row_hash, product_id, raw_data
                 ) VALUES (
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
             """, (
                 "Ozon", import_id, row["accrual_id"], row["accrual_date"],
@@ -234,7 +305,7 @@ def import_ozon_financial_report(path):
                 row["seller_price"], row["service_date"], row["sales_platform"],
                 row["work_scheme"], row["commission_percent"],
                 row["localization_index_percent"], row["delivery_time_hours"],
-                row["amount_total"], product_id, repr(row),
+                row["amount_total"], row_hash, product_id, repr(row),
             ))
             added += 1
 
@@ -243,7 +314,7 @@ def import_ozon_financial_report(path):
             (added, import_id),
         )
 
-    return added, 0, None
+    return added, duplicates, None
 
 
 def is_revenue_row(service_group, accrual_type, amount):
@@ -329,7 +400,6 @@ class OzonFinancePage(QWidget):
         super().__init__(parent)
         init_ozon_finance_tables()
         self.setup_ui()
-        self.load_data()
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
@@ -432,6 +502,7 @@ class OzonFinancePage(QWidget):
                     WHERE marketplace = 'Ozon'
                       AND article = ?
                       AND service_group = 'Продажи'
+                      AND accrual_type = 'Выручка'
                       AND quantity > 0
                 """, (row["article"],)).fetchone()["quantity"]
 
@@ -479,11 +550,21 @@ class OzonFinancePage(QWidget):
         if not global_text:
             global_text = "нет"
 
+        with get_connection() as connection:
+            report_net = connection.execute("""
+                SELECT COALESCE(SUM(amount_total), 0) AS total
+                FROM marketplace_accruals
+                WHERE marketplace = 'Ozon'
+            """).fetchone()["total"]
+
+        profit_after_global = total_profit - float(global_expenses or 0)
         self.summary.setText(
-            f"Продажи: {money(total_revenue)} | "
+            f"Начисления Ozon за импортированные отчёты: {money(report_net)} | "
+            f"Выручка по товарам: {money(total_revenue)}\n"
             f"Расходы Ozon по товарам: {money(total_expenses)} | "
-            f"Себестоимость: {money(total_cost)} | "
-            f"Прибыль до налога: {money(total_profit)}\n"
+            f"Себестоимость: {money(total_cost)}\n"
+            f"Прибыль до налога с учётом расходов без артикула: {money(profit_after_global)}\n"
             f"Глобальные расходы без артикула: {money(global_expenses)}\n"
-            f"{global_text}"
+            f"{global_text}\n"
+            "Начисления не равны гарантированной выплате на банковский счёт."
         )

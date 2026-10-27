@@ -4,10 +4,12 @@ import sqlite3
 from pathlib import Path
 
 from PySide6.QtCore import Qt
+from database import get_connection as shared_get_connection
+from ozon_finance_module import OzonFinancePage
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
-    QFileDialog, QAbstractItemView
+    QFileDialog, QAbstractItemView, QTabWidget
 )
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -15,11 +17,7 @@ DB_PATH = BASE_DIR / "data" / "kraft3d.db"
 
 
 def get_connection():
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(DB_PATH)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA foreign_keys = ON")
-    return connection
+    return shared_get_connection()
 
 
 def money(value):
@@ -74,6 +72,17 @@ def init_marketplace_tables():
             CREATE INDEX IF NOT EXISTS idx_marketplace_sales_article
             ON marketplace_sales(article)
         """)
+        connection.execute("""CREATE TABLE IF NOT EXISTS stock_movements (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL,
+            movement_type TEXT NOT NULL CHECK(movement_type IN ('sale','return','writeoff','reserve','release')),
+            quantity REAL NOT NULL CHECK(quantity > 0), movement_date TEXT NOT NULL,
+            source_type TEXT NOT NULL DEFAULT 'manual', source_id TEXT NOT NULL DEFAULT '',
+            notes TEXT DEFAULT '', created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(product_id) REFERENCES products(id))""")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_stock_movements_product ON stock_movements(product_id)")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_stock_movements_date ON stock_movements(movement_date)")
+        connection.execute("""CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_movements_source
+            ON stock_movements(source_type, source_id, movement_type) WHERE source_id != ''""")
         connection.execute("""
             CREATE INDEX IF NOT EXISTS idx_marketplace_sales_date
             ON marketplace_sales(sale_date)
@@ -255,7 +264,7 @@ def _import_rows(path, report_type, rows):
                 duplicates += 1
                 continue
 
-            connection.execute("""
+            sale_cursor = connection.execute("""
                 INSERT INTO marketplace_sales (
                     marketplace, report_type, import_id, external_key,
                     order_number, shipment_number, sale_date, status,
@@ -278,6 +287,22 @@ def _import_rows(path, report_type, rows):
                 row.get("discount_amount", 0), product_id,
                 repr(row),
             ))
+            sale_id = sale_cursor.lastrowid
+            if report_type == "Реализация" and product_id:
+                sale_quantity = _number(row.get("quantity", 0))
+                return_quantity = _number(row.get("return_quantity", 0))
+                if sale_quantity > 0:
+                    connection.execute("""INSERT OR IGNORE INTO stock_movements
+                        (product_id, movement_type, quantity, movement_date, source_type, source_id, notes)
+                        VALUES (?, 'sale', ?, COALESCE(?, date('now')), 'ozon_realization', ?, ?)""",
+                        (product_id, sale_quantity, row.get("sale_date"), str(sale_id),
+                         f"Ozon, отчёт о реализации, артикул {article}"))
+                if return_quantity > 0:
+                    connection.execute("""INSERT OR IGNORE INTO stock_movements
+                        (product_id, movement_type, quantity, movement_date, source_type, source_id, notes)
+                        VALUES (?, 'return', ?, COALESCE(?, date('now')), 'ozon_realization', ?, ?)""",
+                        (product_id, return_quantity, row.get("sale_date"), str(sale_id),
+                         f"Ozon, возврат, артикул {article}"))
             added += 1
 
         connection.execute(
@@ -293,10 +318,22 @@ class MarketplacePage(QWidget):
         super().__init__(parent)
         init_marketplace_tables()
         self.setup_ui()
-        self.load_data()
 
     def setup_ui(self):
-        layout = QVBoxLayout(self)
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        self.tabs = QTabWidget()
+        self.sales_tab = QWidget()
+        self.setup_sales_tab(self.sales_tab)
+        self.finance_tab = OzonFinancePage()
+        self._finance_loaded = False
+        self.tabs.addTab(self.sales_tab, "Продажи и импорт")
+        self.tabs.addTab(self.finance_tab, "Финансы маркетплейсов")
+        self.tabs.currentChanged.connect(self.on_tab_changed)
+        root_layout.addWidget(self.tabs)
+
+    def setup_sales_tab(self, page_widget):
+        layout = QVBoxLayout(page_widget)
         layout.setContentsMargins(35, 30, 35, 30)
         layout.setSpacing(14)
 
@@ -386,6 +423,12 @@ class MarketplacePage(QWidget):
             self.load_data()
         except Exception as error:
             QMessageBox.critical(self, "Ошибка импорта Ozon", f"Не удалось импортировать CSV:\n{error}")
+
+    def on_tab_changed(self, index):
+        # Финансовые данные загружаем только при первом открытии своей вкладки.
+        if index == 1 and not self._finance_loaded:
+            self.finance_tab.load_data()
+            self._finance_loaded = True
 
     def load_data(self):
         with get_connection() as connection:

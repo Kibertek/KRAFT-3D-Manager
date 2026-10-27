@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, QPushButton,
     QComboBox, QLineEdit, QTextEdit, QDateEdit, QDoubleSpinBox, QDialog,
     QDialogButtonBox, QTableWidget, QTableWidgetItem, QHeaderView,
-    QAbstractItemView, QMessageBox
+    QAbstractItemView, QMessageBox, QInputDialog
 )
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -70,6 +70,10 @@ def initialize_purchase_tables():
             connection.execute(
                 "ALTER TABLE purchases ADD COLUMN finance_transaction_id INTEGER"
             )
+        if "printer_id" not in purchase_columns:
+            connection.execute(
+                "ALTER TABLE purchases ADD COLUMN printer_id INTEGER"
+            )
     initialize_finance_tables()
 
 
@@ -92,8 +96,11 @@ class PurchaseDialog(QDialog):
         self.type_input = QComboBox()
         self.type_input.addItem("Материал", "material")
         self.type_input.addItem("Комплектующее / упаковка", "component")
+        self.type_input.addItem("Запчасть для принтера", "part")
 
         self.item_input = QComboBox()
+        self.printer_input = QComboBox()
+        self.printer_input.setMinimumWidth(260)
         self.item_input.setMinimumWidth(260)
 
         self.quantity_input = QDoubleSpinBox()
@@ -209,7 +216,13 @@ class PurchaseDialog(QDialog):
 
         form.addRow("Дата закупки:", self.date_input)
         form.addRow("Тип позиции:", self.type_input)
-        form.addRow("Позиция:", self.item_input)
+        item_row = QHBoxLayout()
+        item_row.addWidget(self.item_input, 1)
+        self.add_part_button = QPushButton("+ Новая запчасть")
+        self.add_part_button.clicked.connect(self.create_part_item)
+        item_row.addWidget(self.add_part_button)
+        form.addRow("Позиция:", item_row)
+        form.addRow("Для принтера:", self.printer_input)
         form.addRow("Количество:", self.quantity_input)
         form.addRow("Цена за единицу:", self.price_input)
         form.addRow("Поставщик:", self.supplier_input)
@@ -231,7 +244,10 @@ class PurchaseDialog(QDialog):
         layout.addWidget(buttons)
 
         self.type_input.currentIndexChanged.connect(self.load_items)
+        self.type_input.currentIndexChanged.connect(self.update_printer_visibility)
         self.item_input.currentIndexChanged.connect(self.select_item)
+        self.load_printers()
+        self.update_printer_visibility()
         self.quantity_input.valueChanged.connect(self.update_total)
         self.price_input.valueChanged.connect(self.update_total)
 
@@ -239,6 +255,65 @@ class PurchaseDialog(QDialog):
         if self.purchase:
             self.load_purchase_values()
         self.update_total()
+
+    def load_printers(self):
+        current = self.printer_input.currentData()
+        self.printer_input.clear()
+        with get_connection() as connection:
+            rows = connection.execute("SELECT id, name, model FROM printers ORDER BY name COLLATE NOCASE").fetchall()
+        self.printer_input.addItem("Не выбран", None)
+        for printer in rows:
+            label = printer["name"] + (f' ({printer["model"]})' if printer["model"] else "")
+            self.printer_input.addItem(label, int(printer["id"]))
+        if current is not None:
+            index = self.printer_input.findData(current)
+            if index >= 0:
+                self.printer_input.setCurrentIndex(index)
+
+    def update_printer_visibility(self, *_):
+        is_part = self.type_input.currentData() == "part"
+        self.printer_input.setEnabled(is_part)
+        self.add_part_button.setVisible(is_part)
+
+    def create_part_item(self):
+        if self.type_input.currentData() != "part":
+            return
+        name, accepted = QInputDialog.getText(
+            self, "Новая запчасть", "Название запчасти:"
+        )
+        name = name.strip()
+        if not accepted or not name:
+            return
+        try:
+            with get_connection() as connection:
+                existing = connection.execute(
+                    "SELECT id FROM components WHERE name = ? COLLATE NOCASE LIMIT 1",
+                    (name,)
+                ).fetchone()
+                if existing:
+                    QMessageBox.information(
+                        self, "Позиция уже существует",
+                        "Такая позиция уже есть в справочнике. Она будет выбрана в списке."
+                    )
+                    self.load_items()
+                    index = self.item_input.findText(name, Qt.MatchFlag.MatchFixedString)
+                    if index >= 0:
+                        self.item_input.setCurrentIndex(index)
+                    return
+                cursor = connection.execute(
+                    """INSERT INTO components (name, category, unit, price, quantity, min_quantity, supplier, notes)
+                       VALUES (?, 'Запчасти принтера', 'шт.', 0, 0, 0, '', '')""",
+                    (name,)
+                )
+                new_id = cursor.lastrowid
+            self.load_items()
+            for index in range(self.item_input.count()):
+                row = self.item_input.itemData(index)
+                if row and row.get("id") == new_id:
+                    self.item_input.setCurrentIndex(index)
+                    break
+        except Exception as error:
+            QMessageBox.critical(self, "Не удалось создать запчасть", str(error))
 
     def load_purchase_values(self):
         purchase = self.purchase
@@ -262,6 +337,9 @@ class PurchaseDialog(QDialog):
         self.price_input.setValue(float(purchase.get("unit_price") or 0))
         self.supplier_input.setText(purchase.get("supplier") or "")
         self.notes_input.setPlainText(purchase.get("notes") or "")
+        printer_index = self.printer_input.findData(purchase.get("printer_id"))
+        if printer_index >= 0:
+            self.printer_input.setCurrentIndex(printer_index)
         self.stock_label.setText("Редактируется существующая закупка")
         self.update_total()
 
@@ -275,6 +353,16 @@ class PurchaseDialog(QDialog):
                     SELECT id, name, 'катушка' AS unit,
                            spool_price AS price, spool_count AS quantity
                     FROM materials ORDER BY name
+                """).fetchall()
+            elif item_type == "part":
+                rows = connection.execute("""
+                    SELECT id, name, COALESCE(unit, 'шт.') AS unit,
+                           COALESCE(price, 0) AS price, COALESCE(quantity, 0) AS quantity
+                    FROM components
+                    WHERE TRIM(COALESCE(category, '')) NOT IN ('Упаковка', 'упаковка')
+                      AND name NOT LIKE '%Цепоч%'
+                      AND name NOT LIKE '%цепоч%'
+                    ORDER BY name COLLATE NOCASE
                 """).fetchall()
             else:
                 rows = connection.execute("""
@@ -315,6 +403,9 @@ class PurchaseDialog(QDialog):
         if self.quantity_input.value() <= 0:
             QMessageBox.warning(self, "Проверь количество", "Количество должно быть больше нуля.")
             return
+        if self.type_input.currentData() == "part" and self.printer_input.currentData() is None:
+            QMessageBox.warning(self, "Не выбран принтер", "Для закупки запчасти выбери принтер, для которого она предназначена.")
+            return
         self.accept()
 
     def get_data(self):
@@ -323,6 +414,7 @@ class PurchaseDialog(QDialog):
             "purchase_date": self.date_input.date().toString("yyyy-MM-dd"),
             "item_type": self.type_input.currentData(),
             "item_id": int(row["id"]),
+            "printer_id": self.printer_input.currentData() if self.type_input.currentData() == "part" else None,
             "item_name": row["name"],
             "quantity": self.quantity_input.value(),
             "unit": row.get("unit") or "",
@@ -429,7 +521,7 @@ class PurchasesPage(QWidget):
         total_sum = 0.0
         for row_index, purchase in enumerate(rows):
             total_sum += float(purchase["total"] or 0)
-            type_label = "Материал" if purchase["item_type"] == "material" else "Комплектующее"
+            type_label = {"material": "Материал", "component": "Комплектующее / упаковка", "part": "Запчасть для принтера"}.get(purchase["item_type"], "Комплектующее")
             values = [
                 purchase["purchase_date"],
                 type_label,
@@ -493,18 +585,23 @@ class PurchasesPage(QWidget):
                     UPDATE purchases
                     SET purchase_date = ?, item_type = ?, item_id = ?, item_name = ?,
                         quantity = ?, unit = ?, unit_price = ?, total = ?,
-                        supplier = ?, notes = ?
+                        supplier = ?, notes = ?, printer_id = ?
                     WHERE id = ?
                 """, (
                     new_data["purchase_date"], new_data["item_type"], new_data["item_id"],
                     new_data["item_name"], new_data["quantity"], new_data["unit"],
                     new_data["unit_price"], new_data["total"], new_data["supplier"],
-                    new_data["notes"], purchase_id
+                    new_data["notes"], new_data.get("printer_id"), purchase_id
                 ))
                 self.sync_finance_expense(
                     connection, purchase_id, new_data,
                     old_data.get("finance_transaction_id")
                 )
+                if new_data.get("item_type") == "part" and new_data.get("printer_id"):
+                    connection.execute(
+                        "INSERT OR IGNORE INTO component_printer_compatibility (component_id, printer_id) VALUES (?, ?)",
+                        (new_data["item_id"], new_data["printer_id"])
+                    )
 
             self.load_purchases()
             QMessageBox.information(
@@ -704,15 +801,20 @@ class PurchasesPage(QWidget):
                 cursor = connection.execute("""
                     INSERT INTO purchases (
                         purchase_date, item_type, item_id, item_name,
-                        quantity, unit, unit_price, total, supplier, notes
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        quantity, unit, unit_price, total, supplier, notes, printer_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     data["purchase_date"], data["item_type"], data["item_id"],
                     data["item_name"], data["quantity"], data["unit"],
-                    data["unit_price"], data["total"], data["supplier"], data["notes"]
+                    data["unit_price"], data["total"], data["supplier"], data["notes"], data.get("printer_id")
                 ))
                 purchase_id = cursor.lastrowid
                 self.sync_finance_expense(connection, purchase_id, data)
+                if data.get("item_type") == "part" and data.get("printer_id"):
+                    connection.execute(
+                        "INSERT OR IGNORE INTO component_printer_compatibility (component_id, printer_id) VALUES (?, ?)",
+                        (data["item_id"], data["printer_id"])
+                    )
 
             self.load_purchases()
             QMessageBox.information(
